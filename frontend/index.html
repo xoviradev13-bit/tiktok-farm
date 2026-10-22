@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Auto Farm & AI Video Engine</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body class="dark-mode">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+
+        <div class="brand">
+            <div class="brand-icon">
+                <i class="fa-brands fa-tiktok"></i>
+            </div>
+            <div class="brand-text">
+                <h2>TIKTOK FARM <span class="badge-pro">BETA</span></h2>
+                <p>AI Engine & GPMLogin</p>
+            </div>
+            <!-- Toggle anchored on brand bottom divider -->
+            <button class="sidebar-toggle-btn" id="sidebarToggleBtn" onclick="toggleSidebar()" data-tooltip="Thu gọn">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+        </div>
+
+
+        <nav class="nav-menu">
+            <a href="#overview" class="nav-item active" data-tab="tab-overview" data-tooltip="Tổng Quan">
+                <i class="fa-solid fa-chart-pie"></i> <span>Tổng Quan</span>
+            </a>
+            <a href="#youtube" class="nav-item" data-tab="tab-youtube" data-tooltip="Quét Kênh C2V">
+                <i class="fa-brands fa-youtube"></i> <span>Quét Kênh C2V</span>
+            </a>
+            <a href="#saved-channels" class="nav-item" data-tab="tab-saved-channels" data-tooltip="Kênh Đang Giám Sát">
+                <i class="fa-solid fa-bookmark"></i> <span>Kênh Đã Lưu</span>
+            </a>
+            <a href="#pipeline" class="nav-item" data-tab="tab-pipeline" data-tooltip="Tiến Trình Tự Động">
+                <i class="fa-solid fa-diagram-project"></i> <span>Tiến Trình Tự Động</span>
+            </a>
+            <a href="#ai-editor" class="nav-item" data-tab="tab-ai-editor" data-tooltip="AI Video Editor">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> <span>AI Video Editor</span>
+            </a>
+            <a href="#gpm-farm" class="nav-item" data-tab="tab-gpm-farm" data-tooltip="GPMLogin Farm">
+                <i class="fa-solid fa-robot"></i> <span>GPMLogin Farm</span>
+            </a>
+            <a href="#tracker" class="nav-item" data-tab="tab-tracker" data-tooltip="Đạt 10K Follower">
+                <i class="fa-solid fa-award"></i> <span>Đạt 10K Follower</span>
+            </a>
+            <a href="#logs" class="nav-item" data-tab="tab-logs" data-tooltip="Nhật Ký Hệ Thống">
+                <i class="fa-solid fa-terminal"></i> <span>Nhật Ký Hệ Thống</span>
+            </a>
+            <a href="#settings" class="nav-item" data-tab="tab-settings" data-tooltip="Cài Đặt API">
+                <i class="fa-solid fa-gear"></i> <span>Cài Đặt</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="gpm-status-card" id="gpmStatusBadge">
+                <div class="status-indicator ping-pulse"></div>
+                <div class="status-info">
+                    <span class="status-label">GPMLogin Local</span>
+                    <span class="status-text" id="gpmStatusText">Đang kiểm tra...</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+        <!-- Top Navigation Bar (Sticky across all views) -->
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1 id="pageTitle">Bảng Điều Khiển Tổng Quan</h1>
+                <p class="subtitle" id="pageSubtitle">Thống kê tổng quan hệ thống, tài nguyên và tiến độ tăng trưởng</p>
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-clock-widget" title="Thời gian hệ thống (Giờ Việt Nam)">
+                    <i class="fa-regular fa-clock"></i>
+                    <span class="clock-label">Giờ VN:</span>
+                    <span class="clock-time" id="topbarClock">--:--:--</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btnSyncGpmTopbar" onclick="syncGPMProfiles(this)"
+                    title="Đồng bộ lại danh sách Profiles từ GPMLogin">
+                    <i class="fa-solid fa-rotate"></i> Đồng Bộ GPM
+                </button>
+                <button class="btn btn-primary btn-sm" id="btnTestTelegram" onclick="testTelegramAlert(this)"
+                    title="Gửi thông báo thử nghiệm qua Telegram">
+                    <i class="fa-solid fa-bell"></i> Test Báo 10K
+                </button>
+            </div>
+        </header>
+
+        <!-- Dynamic Tabs Container -->
+        <div class="content-body">
+
+            <!-- TAB 1: OVERVIEW -->
+            <section id="tab-overview" class="tab-pane active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon bg-blue"><i class="fa-brands fa-youtube"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="statChannels">0</span>
+                            <span class="stat-title">Kênh YouTube Theo Dõi</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon bg-purple"><i class="fa-solid fa-video"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="statVideos">0</span>
+                            <span class="stat-title">Video Đã Tải / AI Render</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon bg-cyan"><i class="fa-solid fa-users-gear"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="statProfiles">0</span>
+                            <span class="stat-title">Profiles GPMLogin</span>
+                        </div>
+                    </div>
+                    <div class="stat-card highlight-card">
+                        <div class="stat-icon bg-gold"><i class="fa-solid fa-trophy"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="stat10k">0</span>
+                            <span class="stat-title">Nick Đủ 10K Follow Beta</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-row">
+                    <!-- Quick Actions Panel -->
+                    <div class="glass-panel col-8">
+                        <div class="panel-header">
+                            <h3><i class="fa-solid fa-bolt"></i> Thao Tác Nhanh</h3>
+                        </div>
+                        <div class="quick-actions-grid">
+                            <div class="action-box" onclick="switchTab('tab-youtube')">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <h4>Quét Kênh Theo Từ Khóa</h4>
+                                <p>Lọc 50-100 kênh còn hoạt động & tần suất đăng</p>
+                            </div>
+                            <div class="action-box" onclick="switchTab('tab-ai-editor')">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                <h4>Cắt & Lách Bản Quyền AI</h4>
+                                <p>Render dọc 9:16, lật hình, đổi speed & sub động</p>
+                            </div>
+                            <div class="action-box" onclick="switchTab('tab-gpm-farm')">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <h4>Đăng Bài Tự Động</h4>
+                                <p>Mở GPM profile và đẩy video lên TikTok</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Status Panel -->
+                    <div class="glass-panel col-4">
+                        <div class="panel-header">
+                            <h3><i class="fa-solid fa-signal"></i> Trạng Thái Hệ Thống</h3>
+                        </div>
+                        <ul class="system-checklist">
+                            <li>
+                                <span class="check-title">GPMLogin Local API</span>
+                                <span class="badge" id="chkGpm">Checking...</span>
+                            </li>
+                            <li>
+                                <span class="check-title">FFmpeg Video Engine</span>
+                                <span class="badge badge-success">Sẵn Sàng</span>
+                            </li>
+                            <li>
+                                <span class="check-title">yt-dlp Downloader</span>
+                                <span class="badge badge-success">Sẵn Sàng</span>
+                            </li>
+                            <li>
+                                <span class="check-title">Playwright Browser CDP</span>
+                                <span class="badge badge-success">Sẵn Sàng</span>
+                            </li>
+                            <li>
+                                <span class="check-title">Telegram Bot Alert</span>
+                                <span class="badge badge-info">Đang Giám Sát</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: YOUTUBE SCANNER (C2V KEY) -->
+            <section id="tab-youtube" class="tab-pane">
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h3><i class="fa-brands fa-youtube"></i> C2V Key: Quét Kênh Theo Từ Khóa Ngách</h3>
+                            <p class="panel-sub">Lọc ra 50 - 100 kênh đang hoạt động mạnh, hiển thị số video, view, sub
+                                và chu kỳ đăng</p>
+                        </div>
+                    </div>
+
+                    <!-- Search Box -->
+                    <div class="search-bar-container">
+                        <div class="input-with-icon">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="ytSearchKeyword"
+                                placeholder="Nhập từ khóa chủ đề (ví dụ: podcast shorts, finance us, daily facts, scary stories)..."
+                                value="podcast clips viral">
+                        </div>
+                        <select id="ytMaxResults" class="custom-select">
+                            <option value="20">20 Kênh</option>
+                            <option value="50" selected>50 Kênh</option>
+                            <option value="100">100 Kênh</option>
+                        </select>
+                        <button class="btn btn-primary" id="btnSearchYt" onclick="searchYouTubeChannels()">
+                            <i class="fa-solid fa-bolt"></i> Bắt Đầu Quét
+                        </button>
+                    </div>
+
+                    <!-- Table Controls Toolbar (Sort, Filter, Search) -->
+                    <div class="table-toolbar mt-3" id="ytTableToolbar">
+                        <div class="toolbar-multi">
+                            <!-- Row 1: Sort + Main Metrics (Views & Subs & Country) -->
+                            <div class="toolbar-row">
+                                <div class="toolbar-group">
+                                    <div class="sort-control">
+                                        <label for="ytSortSelect"><i class="fa-solid fa-arrow-down-short-wide"></i> Sắp
+                                            xếp:</label>
+                                        <select id="ytSortSelect" class="custom-select sort-select"
+                                            onchange="handleSortSelectChange(this.value)">
+                                            <option value="default">Mặc định (Độ liên quan)</option>
+                                            <option value="subscriber_count">Subscribers</option>
+                                            <option value="video_count">Tổng Số Video</option>
+                                            <option value="avg_views">Lượt Xem TB</option>
+                                            <option value="total_view_count">Tổng Lượt Xem Kênh</option>
+                                            <option value="views_per_sub_ratio">Tỷ Lệ View/Sub (Viral Ratio 🔥)</option>
+                                            <option value="days_since_last_upload">Video Mới Nhất</option>
+                                            <option value="upload_cadence_days">Tần Suất Ra Video</option>
+                                            <option value="country">Quốc Gia</option>
+                                            <option value="title">Tên Kênh</option>
+                                            <option value="is_active">Trạng Thái Hoạt Động</option>
+                                            <option value="is_saved">Đã Lưu / Chưa Lưu</option>
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-secondary sort-dir-btn"
+                                            id="btnSortDirection" onclick="toggleSortDirection()"
+                                            title="Chuyển đổi Tăng dần / Giảm dần">
+                                            <i class="fa-solid fa-arrow-down-wide-short" id="sortDirIcon"></i>
+                                            <span id="sortDirText">Giảm dần</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Filter Country -->
+                                    <div class="sort-control">
+                                        <label for="ytFilterCountrySelect"><i class="fa-solid fa-earth-americas"></i>
+                                            Quốc gia:</label>
+                                        <select id="ytFilterCountrySelect" class="custom-select sort-select"
+                                            onchange="handleFilterCountryChange(this.value)">
+                                            <option value="all">Tất cả quốc gia</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Filter Min Views -->
+                                    <div class="sort-control">
+                                        <label for="ytFilterViewsSelect"><i class="fa-solid fa-eye"></i> View >:</label>
+                                        <select id="ytFilterViewsSelect" class="custom-select sort-select"
+                                            onchange="handleFilterViewsChange(this.value)">
+                                            <option value="0">Tất cả</option>
+                                            <option value="5000">> 5,000 views</option>
+                                            <option value="10000">> 10,000 views</option>
+                                            <option value="50000">> 50,000 views</option>
+                                            <option value="100000">> 100,000 views</option>
+                                            <option value="500000">> 500,000 views</option>
+                                            <option value="1000000">> 1,000,000 views</option>
+                                            <option value="custom">Tùy chỉnh...</option>
+                                        </select>
+                                        <input type="number" id="ytCustomViewsInput" class="custom-num-input"
+                                            style="display: none;" placeholder="Ví dụ: 25000" min="0" step="1000"
+                                            oninput="handleCustomViewsInput(this.value)">
+                                    </div>
+
+                                    <!-- Filter Min Subs -->
+                                    <div class="sort-control">
+                                        <label for="ytFilterSubsSelect"><i class="fa-solid fa-users"></i> Sub >:</label>
+                                        <select id="ytFilterSubsSelect" class="custom-select sort-select"
+                                            onchange="handleFilterSubsChange(this.value)">
+                                            <option value="0">Tất cả</option>
+                                            <option value="1000">> 1,000 subs</option>
+                                            <option value="10000">> 10,000 subs</option>
+                                            <option value="50000">> 50,000 subs</option>
+                                            <option value="100000">> 100,000 subs</option>
+                                            <option value="500000">> 500,000 subs</option>
+                                            <option value="custom">Tùy chỉnh...</option>
+                                        </select>
+                                        <input type="number" id="ytCustomSubsInput" class="custom-num-input"
+                                            style="display: none;" placeholder="Ví dụ: 15000" min="0" step="500"
+                                            oninput="handleCustomSubsInput(this.value)">
+                                    </div>
+
+                                    <!-- Filter Cadence -->
+                                    <div class="sort-control">
+                                        <label for="ytFilterCadenceSelect"><i class="fa-solid fa-calendar-days"></i> Tần
+                                            suất:</label>
+                                        <select id="ytFilterCadenceSelect" class="custom-select sort-select"
+                                            onchange="handleFilterCadenceChange(this.value)">
+                                            <option value="all">Tất cả tần suất</option>
+                                            <option value="daily">Hàng ngày (&le; 1 ngày/vid)</option>
+                                            <option value="frequent">Đều đặn (&le; 3 ngày/vid)</option>
+                                            <option value="weekly">Hàng tuần (&le; 7 ngày/vid)</option>
+                                            <option value="custom">Tùy chỉnh...</option>
+                                        </select>
+                                        <input type="number" id="ytCustomCadenceInput" class="custom-num-input"
+                                            style="display: none;" placeholder="&le; số ngày/vid" min="0.1" step="0.5"
+                                            oninput="handleCustomCadenceInput(this.value)">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Row 2: Status, Search, Column Picker, Reset -->
+                            <div class="toolbar-row">
+                                <div class="toolbar-group">
+                                    <!-- Filter Saved -->
+                                    <div class="sort-control">
+                                        <label for="ytFilterSavedSelect"><i class="fa-solid fa-bookmark"></i>
+                                            Lưu:</label>
+                                        <select id="ytFilterSavedSelect" class="custom-select sort-select"
+                                            onchange="handleFilterSavedChange(this.value)">
+                                            <option value="all">Tất cả</option>
+                                            <option value="saved">Đã Lưu</option>
+                                            <option value="unsaved">Chưa Lưu</option>
+                                        </select>
+                                    </div>
+
+                                    <label class="filter-checkbox-label">
+                                        <input type="checkbox" id="ytFilterActiveOnly"
+                                            onchange="handleFilterActiveChange(this.checked)">
+                                        <span>Chỉ kênh Đang hoạt động</span>
+                                    </label>
+
+                                    <!-- Column Picker Dropdown -->
+                                    <div class="col-picker-container">
+                                        <button type="button" class="btn-col-toggle" id="btnToggleColDropdown"
+                                            onclick="toggleColumnDropdown(event)">
+                                            <i class="fa-solid fa-table-columns"></i> Cột hiển thị <i
+                                                class="fa-solid fa-chevron-down"
+                                                style="font-size: 10px; margin-left: 8px;"></i>
+                                        </button>
+                                        <div class="col-picker-dropdown" id="colPickerDropdown" style="display: none;">
+                                            <div class="col-picker-header">
+                                                <span><i class="fa-solid fa-sliders"></i> Cột Hiển Thị</span>
+                                                <button type="button" class="btn-close-picker"
+                                                    onclick="closeColumnDropdown()">&times;</button>
+                                            </div>
+                                            <div class="col-picker-body">
+                                                <label class="col-picker-item disabled" title="Tên kênh luôn hiển thị">
+                                                    <input type="checkbox" checked disabled data-col-target="col-title">
+                                                    <span>Tên Kênh (Cố định)</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-id"
+                                                        onchange="toggleColVisibility('col-id', this.checked)">
+                                                    <span>Mã Channel ID</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-country"
+                                                        onchange="toggleColVisibility('col-country', this.checked)">
+                                                    <span>Quốc Gia</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-subs"
+                                                        onchange="toggleColVisibility('col-subs', this.checked)">
+                                                    <span>Subscribers</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-videos"
+                                                        onchange="toggleColVisibility('col-videos', this.checked)">
+                                                    <span>Tổng Video</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-avg-views"
+                                                        onchange="toggleColVisibility('col-avg-views', this.checked)">
+                                                    <span>Lượt Xem TB</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-total-views"
+                                                        onchange="toggleColVisibility('col-total-views', this.checked)">
+                                                    <span>Tổng Views Kênh</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-ratio"
+                                                        onchange="toggleColVisibility('col-ratio', this.checked)">
+                                                    <span>Tỷ Lệ View/Sub</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-last-upload"
+                                                        onchange="toggleColVisibility('col-last-upload', this.checked)">
+                                                    <span>Video Mới Nhất</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-cadence"
+                                                        onchange="toggleColVisibility('col-cadence', this.checked)">
+                                                    <span>Tần Suất Đăng</span>
+                                                </label>
+                                                <label class="col-picker-item">
+                                                    <input type="checkbox" checked data-col-target="col-active"
+                                                        onchange="toggleColVisibility('col-active', this.checked)">
+                                                    <span>Trạng Thái</span>
+                                                </label>
+                                                <label class="col-picker-item disabled" title="Thao tác luôn hiển thị">
+                                                    <input type="checkbox" checked disabled
+                                                        data-col-target="col-actions">
+                                                    <span>Thao Tác (Cố định)</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button type="button" class="btn-reset-filter" onclick="resetYtFilters()"
+                                        title="Khôi phục toàn bộ bộ lọc về mặc định">
+                                        <i class="fa-solid fa-rotate-left"></i> Đặt lại bộ lọc
+                                    </button>
+                                </div>
+
+                                <div class="toolbar-group">
+                                    <div class="table-search-box">
+                                        <i class="fa-solid fa-filter"></i>
+                                        <input type="text" id="ytFilterKeyword"
+                                            placeholder="Lọc nhanh tên kênh, ID, handle..."
+                                            oninput="handleFilterKeywordChange(this.value)">
+                                    </div>
+                                    <span class="badge badge-info" id="ytResultCountBadge">0 Kênh</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Search Results Table -->
+                    <div class="table-responsive mt-3">
+                        <table class="data-table" id="ytChannelsTable">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" id="th-title" data-col="col-title"
+                                        onclick="handleHeaderSort('title')" title="Bấm để sắp xếp theo Tên Kênh"
+                                        style="min-width: 250px;">
+                                        Kênh YouTube <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th data-col="col-id" style="min-width: 140px;">
+                                        Mã Channel ID
+                                    </th>
+                                    <th class="sortable" id="th-country" data-col="col-country"
+                                        onclick="handleHeaderSort('country')" title="Bấm để sắp xếp theo Quốc Gia">
+                                        Quốc Gia <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-subs" data-col="col-subs"
+                                        onclick="handleHeaderSort('subscriber_count')"
+                                        title="Bấm để sắp xếp theo Subscribers">
+                                        Subscribers <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-videos" data-col="col-videos"
+                                        onclick="handleHeaderSort('video_count')"
+                                        title="Bấm để sắp xếp theo Tổng Video">
+                                        Tổng Video <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-avg-views" data-col="col-avg-views"
+                                        onclick="handleHeaderSort('avg_views')" title="Bấm để sắp xếp theo Lượt Xem TB">
+                                        Lượt Xem TB <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-total-views" data-col="col-total-views"
+                                        onclick="handleHeaderSort('total_view_count')"
+                                        title="Bấm để sắp xếp theo Tổng Lượt Xem">
+                                        Tổng Views <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-ratio" data-col="col-ratio"
+                                        onclick="handleHeaderSort('views_per_sub_ratio')"
+                                        title="Bấm để sắp xếp theo Tỷ Lệ View/Sub">
+                                        Tỷ Lệ View/Sub <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-last_upload" data-col="col-last-upload"
+                                        onclick="handleHeaderSort('days_since_last_upload')"
+                                        title="Bấm để sắp xếp theo Ngày Đăng Gần Nhất">
+                                        Video Mới Nhất <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-cadence" data-col="col-cadence"
+                                        onclick="handleHeaderSort('upload_cadence_days')"
+                                        title="Bấm để sắp xếp theo Tần Suất Đăng">
+                                        Tần Suất Đăng <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" id="th-active" data-col="col-active"
+                                        onclick="handleHeaderSort('is_active')" title="Bấm để sắp xếp theo Trạng Thái">
+                                        Trạng Thái <i class="fa-solid fa-sort sort-icon"></i>
+                                    </th>
+                                    <th data-col="col-actions" style="min-width: 110px; text-align: center;">Thao Tác
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="ytChannelsBody">
+                                <tr>
+                                    <td colspan="12" class="text-center py-4 text-muted">
+                                        Nhập từ khóa phía trên và bấm <strong>"Bắt Đầu Quét"</strong> để tìm kênh.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: SAVED CHANNELS MANAGER -->
+            <section id="tab-saved-channels" class="tab-pane">
+                <!-- Saved Channels Stats Bar -->
+                <div class="stats-grid mb-4">
+                    <div class="stat-card">
+                        <div class="stat-icon bg-blue"><i class="fa-solid fa-bookmark"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="savedCountTotal">0</span>
+                            <span class="stat-title">Kênh Đang Giám Sát</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon bg-green"><i class="fa-solid fa-circle-play"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="savedCountActive">0</span>
+                            <span class="stat-title">Đang Bật Auto-Lấy Video</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon bg-purple"><i class="fa-solid fa-cloud-arrow-down"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="savedCountDownloaded">0</span>
+                            <span class="stat-title">Video Đã Tải Về</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon bg-gold"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                        <div class="stat-details">
+                            <span class="stat-num" id="savedCountRendered">0</span>
+                            <span class="stat-title">Video Đã Render AI</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h3><i class="fa-solid fa-bookmark text-primary"></i> Danh Sách Kênh YouTube Đang Giám Sát
+                            </h3>
+                            <p class="panel-sub">Tự động quét RSS định kỳ mỗi 15 phút, tải video mới nhất và đưa vào
+                                pipeline Render AI</p>
+                        </div>
+                        <div class="panel-actions-inline">
+                            <button class="btn btn-secondary" id="btnRefreshSavedChannels"
+                                onclick="loadSavedChannels(this)">
+                                <i class="fa-solid fa-rotate"></i> Làm Mới
+                            </button>
+                            <button class="btn btn-primary" id="btnScanAllSavedChannels"
+                                onclick="scanAllSavedChannels(this)">
+                                <i class="fa-solid fa-bolt"></i> Quét Toàn Bộ Ngay
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Toolbar Filter & Search -->
+                    <div class="table-toolbar mt-3">
+                        <div class="toolbar-left">
+                            <div class="sort-control">
+                                <label for="filterSavedStatus"><i class="fa-solid fa-filter"></i> Trạng thái:</label>
+                                <select id="filterSavedStatus" class="custom-select sort-select"
+                                    onchange="renderSavedChannelsTable()">
+                                    <option value="all">Tất cả kênh</option>
+                                    <option value="active">🟢 Đang hoạt động (Lấy video)</option>
+                                    <option value="inactive">⚪ Tạm ngưng (Không lấy)</option>
+                                </select>
+                            </div>
+                            <div class="table-search-box">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="searchSavedKeyword"
+                                    placeholder="Tìm theo tên hiển thị, tên kênh..."
+                                    oninput="renderSavedChannelsTable()">
+                            </div>
+                        </div>
+                        <div class="toolbar-right">
+                            <span class="badge badge-info" id="badgeSavedCount">0 Kênh</span>
+                        </div>
+                    </div>
+
+                    <!-- Saved Channels Table -->
+                    <div class="table-responsive mt-3">
+                        <table class="data-table" id="savedChannelsTable">
+                            <thead>
+                                <tr>
+                                    <th>Kênh & Định Danh (Tên / ID / Link)</th>
+                                    <th>Quốc Gia</th>
+                                    <th>Subscribers & Lượt Xem</th>
+                                    <th>Lần Ra Video Gần Nhất</th>
+                                    <th>Chu Kỳ Đăng</th>
+                                    <th>Video (Tải / Render)</th>
+                                    <th>Proxy / Thư Mục</th>
+                                    <th>Trạng Thái</th>
+                                    <th>Hành Động</th>
+                                </tr>
+                            </thead>
+                            <tbody id="savedChannelsBody">
+                                <tr>
+                                    <td colspan="9" class="text-center py-4 text-muted">
+                                        Đang nạp danh sách kênh đã lưu...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: AUTOMATION PIPELINE -->
+            <section id="tab-pipeline" class="tab-pane">
+                <div class="glass-panel mb-4">
+                    <div class="panel-header">
+                        <div>
+                            <h3><i class="fa-solid fa-diagram-project text-cyan"></i> Quy Trình Tự Động Hóa (Auto Farm
+                                Pipeline)</h3>
+                            <p class="panel-sub">Theo dõi chu kỳ quét RSS (15 phút), tải video gốc (yt-dlp), render lách
+                                bản quyền và đẩy lịch đăng TikTok</p>
+                        </div>
+                        <div class="scheduler-badge-wrap">
+                            <span class="badge badge-success" id="pipelineSchedulerStatus"><i
+                                    class="fa-solid fa-circle-dot"></i> Scheduler: Đang Chạy</span>
+                            <button class="btn btn-sm btn-primary" onclick="triggerManualPipelineScan(this)">
+                                <i class="fa-solid fa-play"></i> Chạy Quét Ngay
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 4-Stage Workflow Steps Cards -->
+                    <div class="pipeline-flow-grid mt-3">
+                        <div class="flow-step-card">
+                            <div class="flow-step-num">1</div>
+                            <div class="flow-step-icon bg-blue"><i class="fa-solid fa-rss"></i></div>
+                            <div class="flow-step-content">
+                                <h4>Quét RSS Feed Kênh</h4>
+                                <p class="flow-step-meta">Mỗi 15 phút qua URL XML</p>
+                                <span class="flow-badge" id="pipeActiveChannels">0 Kênh Active</span>
+                            </div>
+                        </div>
+                        <div class="flow-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+                        <div class="flow-step-card">
+                            <div class="flow-step-num">2</div>
+                            <div class="flow-step-icon bg-cyan"><i class="fa-solid fa-cloud-arrow-down"></i></div>
+                            <div class="flow-step-content">
+                                <h4>Tải Video Gốc</h4>
+                                <p class="flow-step-meta">yt-dlp stream MP4 không quota</p>
+                                <span class="flow-badge" id="pipeDownloadedCount">0 Video Đã Tải</span>
+                            </div>
+                        </div>
+                        <div class="flow-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+                        <div class="flow-step-card">
+                            <div class="flow-step-num">3</div>
+                            <div class="flow-step-icon bg-purple"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                            <div class="flow-step-content">
+                                <h4>AI Transformer Render</h4>
+                                <p class="flow-step-meta">Dọc 9:16, speed x1.03, lật hình</p>
+                                <span class="flow-badge" id="pipeRenderedCount">0 Video Đã Render</span>
+                            </div>
+                        </div>
+                        <div class="flow-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+                        <div class="flow-step-card">
+                            <div class="flow-step-num">4</div>
+                            <div class="flow-step-icon bg-gold"><i class="fa-brands fa-tiktok"></i></div>
+                            <div class="flow-step-content">
+                                <h4>Đăng Lên TikTok GPM</h4>
+                                <p class="flow-step-meta">Hàng đợi upload tự động mỗi 60s</p>
+                                <span class="flow-badge" id="pipeUploadedCount">0 Video Đã Đăng</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Pipeline Queue Table -->
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-list-check"></i> Hàng Đợi & Lịch Sử Xử Lý Gần Đây</h3>
+                        <button class="btn btn-sm btn-secondary" onclick="loadPipelineStatus()">Làm Mới</button>
+                    </div>
+                    <div class="table-responsive mt-3">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Video</th>
+                                    <th>Kênh Nguồn</th>
+                                    <th>Thời Lượng</th>
+                                    <th>Trạng Thái Luồng</th>
+                                    <th>Thời Gian Tạo</th>
+                                    <th>Thao Tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pipelineTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center py-4 text-muted">Đang tải trạng thái tiến
+                                        trình...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: AI VIDEO EDITOR -->
+            <section id="tab-ai-editor" class="tab-pane">
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Video Transformer (Lách Bản Quyền
+                                TikTok Beta)</h3>
+                            <p class="panel-sub">Tự động format dọc 9:16, lật hình, đổi tốc độ, cắt part >60s và sinh
+                                Hook 3s đầu</p>
+                        </div>
+                    </div>
+
+                    <div class="download-bar mt-2">
+                        <input type="text" id="directDownloadUrl"
+                            placeholder="Dán link video YouTube cần tải & edit (VD: https://www.youtube.com/watch?v=...)"
+                            class="input-field">
+                        <button class="btn btn-secondary" id="btnDownloadVideo" onclick="downloadSingleVideo()">
+                            <i class="fa-solid fa-download"></i> Tải Video Gốc
+                        </button>
+                    </div>
+
+                    <div class="table-responsive mt-4">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Tiêu Đề Video Gốc</th>
+                                    <th>Thời Lượng</th>
+                                    <th>Trạng Thái</th>
+                                    <th>Hành Động Render AI</th>
+                                </tr>
+                            </thead>
+                            <tbody id="videosTableBody">
+                                <tr>
+                                    <td colspan="5" class="text-center py-4 text-muted">Đang tải danh sách video...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: GPM LOGIN FARM & UPLOADER -->
+            <section id="tab-gpm-farm" class="tab-pane">
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h3><i class="fa-solid fa-robot"></i> GPMLogin Farm & Auto Uploader</h3>
+                            <p class="panel-sub">Quản lý dàn profile, tự động gắn proxy và upload video đã render</p>
+                        </div>
+                        <button class="btn btn-primary" id="btnSyncGpmTab" onclick="syncGPMProfiles(this)">
+                            <i class="fa-solid fa-arrows-rotate"></i> Quét Lại GPMLogin
+                        </button>
+                    </div>
+
+                    <div class="table-responsive mt-3">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Tên Profile GPM</th>
+                                    <th>Proxy Gắn Kèm</th>
+                                    <th>TikTok Username</th>
+                                    <th>Followers</th>
+                                    <th>Tổng View</th>
+                                    <th>Chuẩn Beta 10K</th>
+                                    <th>Thao Tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="gpmTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center py-4 text-muted">Chưa có profile nào. Hãy ấn
+                                        "Đồng Bộ GPM" để nạp dữ liệu!</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: TRACKER & 10K ALERTS -->
+            <section id="tab-tracker" class="tab-pane">
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h3><i class="fa-solid fa-trophy text-gold"></i> Danh Sách Nick Đạt Chuẩn 10.000 Follower
+                            </h3>
+                            <p class="panel-sub">Các tài khoản đã đủ điều kiện tham gia Creator Rewards Program (TikTok
+                                Beta)</p>
+                        </div>
+                    </div>
+
+                    <div class="cards-grid mt-3" id="eligibleCardsGrid">
+                        <!-- Sẽ được điền tự động bằng JavaScript -->
+                        <div class="card-empty-state">
+                            <i class="fa-solid fa-chart-line"></i>
+                            <p>Hệ thống đang theo dõi các kênh. Khi có nick chạm mốc 10.000 Follower, thẻ vinh danh sẽ
+                                xuất hiện tại đây và bắn tin nhắn Telegram ngay lập tức!</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 6: LOGS -->
+            <section id="tab-logs" class="tab-pane">
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-terminal"></i> Nhật Ký Hoạt Động (Live Logs)</h3>
+                        <button class="btn btn-sm btn-secondary" onclick="loadDashboardStats()">Làm mới</button>
+                    </div>
+                    <div class="log-terminal" id="logTerminal">
+                        <div class="log-line info">[INIT] Hệ thống TikTok Farm & AI Engine đã khởi động thành công.
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB SETTINGS: API KEY MANAGEMENT -->
+            <section id="tab-settings" class="tab-pane">
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h3><i class="fa-solid fa-key text-accent"></i> Quản Lý API Keys</h3>
+                            <p class="panel-sub">Thêm, chỉnh sửa và xoay vòng API Keys. Hỗ trợ nhiều YouTube API Key để
+                                tránh hết quota.</p>
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="loadApiKeySettings()"><i
+                                class="fa-solid fa-rotate"></i> Làm Mới</button>
+                    </div>
+
+                    <!-- YouTube API Keys -->
+                    <div class="settings-section mt-3">
+                        <div class="settings-section-header">
+                            <i class="fa-brands fa-youtube text-danger"></i>
+                            <div>
+                                <h4>YouTube Data API v3 Keys</h4>
+                                <p class="panel-sub">Mỗi key miễn phí 10,000 units/ngày. Thêm nhiều key để tự động xoay
+                                    vòng khi hết quota. Phân cách bằng dấu phẩy hoặc xuống dòng.</p>
+                            </div>
+                        </div>
+                        <div class="form-group mt-2">
+                            <textarea id="settingYoutubeKeys" class="input-field" rows="4" placeholder="AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+                                AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
+                                AIzaSyZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+                                style="font-family: monospace; font-size: 13px; resize: vertical;"></textarea>
+                            <small class="form-hint"
+                                style="display: block; margin-top: 6px; margin-bottom: 14px; color: var(--text-muted); font-size: 12px; line-height: 1.5;">Mỗi
+                                key trên 1 dòng hoặc cách nhau bằng dấu phẩy. Hệ thống sẽ tự động xoay sang key tiếp
+                                theo khi key hiện tại hết quota.</small>
+                        </div>
+                        <div
+                            style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; margin-bottom: 12px;">
+                            <button class="btn btn-sm btn-secondary" id="btnTestYtKey" onclick="testYoutubeKey(this)">
+                                <i class="fa-solid fa-flask"></i> Test Key Đầu Tiên
+                            </button>
+                            <span id="testKeyResult" style="font-size:13px;"></span>
+                        </div>
+
+                        <!-- Key Pool Status -->
+                        <div id="keyPoolStatus" class="mt-3" style="display:none;">
+                            <h5 style="font-size:13px; color:var(--text-muted); margin-bottom:8px;"><i
+                                    class="fa-solid fa-table-list"></i> Trạng Thái Key Pool</h5>
+                            <div id="keyPoolTable"></div>
+                        </div>
+                    </div>
+
+                    <hr class="settings-divider">
+
+                    <!-- AI API Keys -->
+                    <div class="settings-section">
+                        <div class="settings-section-header">
+                            <i class="fa-solid fa-brain" style="color:#a855f7;"></i>
+                            <div>
+                                <h4>AI API Keys (Tùy Chọn)</h4>
+                                <p class="panel-sub">Dùng để sinh hook, tiêu đề viral và hashtag tự động.</p>
+                            </div>
+                        </div>
+                        <div class="modal-form-grid mt-2">
+                            <div class="form-group">
+                                <label><i class="fa-solid fa-robot"></i> Gemini API Key:</label>
+                                <input type="password" id="settingGeminiKey" class="input-field" placeholder="AIzaSy..."
+                                    autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label><i class="fa-solid fa-microchip"></i> OpenAI API Key:</label>
+                                <input type="password" id="settingOpenAiKey" class="input-field" placeholder="sk-..."
+                                    autocomplete="off">
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="settings-divider">
+
+                    <!-- Telegram -->
+                    <div class="settings-section">
+                        <div class="settings-section-header">
+                            <i class="fa-brands fa-telegram" style="color:#2AABEE;"></i>
+                            <div>
+                                <h4>Telegram Bot Alert</h4>
+                                <p class="panel-sub">Nhận thông báo khi có nick đạt 10,000 Follower.</p>
+                            </div>
+                        </div>
+                        <div class="modal-form-grid mt-2">
+                            <div class="form-group">
+                                <label><i class="fa-solid fa-robot"></i> Bot Token:</label>
+                                <input type="password" id="settingTelegramToken" class="input-field"
+                                    placeholder="1234567890:AAFxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label><i class="fa-solid fa-id-badge"></i> Chat ID:</label>
+                                <input type="text" id="settingTelegramChatId" class="input-field"
+                                    placeholder="-100xxxxxxxxx hoặc @channel">
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="settings-divider">
+
+                    <!-- GPMLogin -->
+                    <div class="settings-section">
+                        <div class="settings-section-header">
+                            <i class="fa-solid fa-network-wired" style="color:#38bdf8;"></i>
+                            <div>
+                                <h4>GPMLogin Local API</h4>
+                                <p class="panel-sub">Địa chỉ kết nối tới phần mềm GPMLogin đang chạy trên máy.</p>
+                            </div>
+                        </div>
+                        <div class="form-group mt-2">
+                            <label><i class="fa-solid fa-link"></i> API Base URL:</label>
+                            <input type="text" id="settingGpmUrl" class="input-field"
+                                placeholder="http://127.0.0.1:9495/api/v1">
+                        </div>
+                    </div>
+
+                    <!-- Save Button -->
+                    <div class="mt-4" style="display:flex; gap:12px; align-items:center;">
+                        <button class="btn btn-primary" id="btnSaveApiKeys" onclick="saveApiKeySettings(this)">
+                            <i class="fa-solid fa-floppy-disk"></i> Lưu Toàn Bộ Cài Đặt
+                        </button>
+                        <span id="saveKeysResult" style="font-size:13px;"></span>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Modal Upload Video To GPM -->
+    <div class="modal" id="uploadModal">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-cloud-arrow-up"></i> Đăng Video Lên TikTok Qua GPM</h3>
+                <span class="close-btn" onclick="closeUploadModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Chọn Profile GPMLogin:</label>
+                    <select id="modalProfileSelect" class="input-field"></select>
+                </div>
+                <div class="form-group">
+                    <label>Đường dẫn video đã render:</label>
+                    <input type="text" id="modalVideoPath" class="input-field" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Tiêu đề (AI Title):</label>
+                    <input type="text" id="modalVideoTitle" class="input-field">
+                </div>
+                <div class="form-group">
+                    <label>Hashtag:</label>
+                    <input type="text" id="modalVideoTags" class="input-field"
+                        value="#viral #fyp #xuhuong #learnontiktok">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeUploadModal()">Hủy</button>
+                <button class="btn btn-primary" id="btnConfirmUpload" onclick="executeUploadVideo()">
+                    <i class="fa-solid fa-paper-plane"></i> Bắt Đầu Đăng Bài
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Cài Đặt Chi Tiết Kênh -->
+    <div class="modal" id="channelSettingsModal">
+        <div class="modal-content glass-panel modal-lg">
+            <div class="modal-header">
+                <div>
+                    <h3><i class="fa-solid fa-sliders text-primary"></i> Cài Đặt Kênh: <span
+                            id="modalChannelTitleHeader" class="text-accent"></span></h3>
+                    <p class="modal-sub" id="modalChannelIdSub"></p>
+                </div>
+                <span class="close-btn" onclick="closeChannelSettingsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="settingChannelId">
+
+                <!-- Quick Link & Copy Actions Bar -->
+                <div class="channel-quick-actions-bar mb-3">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="openCurrentChannelYouTube()">
+                        <i class="fa-brands fa-youtube text-danger"></i> Mở Kênh YouTube
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="copyCurrentChannelUrl()">
+                        <i class="fa-solid fa-copy"></i> Sao Chép URL
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary" id="btnModalScanNow"
+                        onclick="scanCurrentChannelNow(this)">
+                        <i class="fa-solid fa-bolt"></i> Quét Kênh Này Ngay
+                    </button>
+                </div>
+
+                <div class="modal-form-grid">
+                    <div class="form-group full-width">
+                        <label><i class="fa-solid fa-tag"></i> Gắn Tên Hiển Thị (Display Name / Alias):</label>
+                        <input type="text" id="settingDisplayName" class="input-field"
+                            placeholder="Ví dụ: Kênh Podcast US #01 (Chủ đề Tài chính)...">
+                        <small class="form-hint">Đặt tên gợi nhớ để phân loại thay vì tên gốc của kênh.</small>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label><i class="fa-solid fa-shield-halved"></i> Gắn Proxy Riêng Cho Kênh (Tùy chọn):</label>
+                        <input type="text" id="settingCustomProxy" class="input-field"
+                            placeholder="http://user:pass@ip:port hoặc ip:port">
+                        <small class="form-hint">Dùng proxy riêng cho kênh này nếu IP chính bị chặn hoặc cần xoay
+                            IP.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-folder-arrow-down"></i> Thư Mục Lưu Video Tải Về:</label>
+                        <input type="text" id="settingDownloadDir" class="input-field"
+                            placeholder="Mặc định: data/downloads">
+                        <small class="form-hint">Đường dẫn thư mục lưu file MP4 gốc trên máy tính.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-wand-magic-sparkles"></i> Thư Mục Lưu Video Render:</label>
+                        <input type="text" id="settingRenderDir" class="input-field"
+                            placeholder="Mặc định: data/rendered">
+                        <small class="form-hint">Đường dẫn thư mục lưu video đã lách bản quyền.</small>
+                    </div>
+
+                    <div class="form-group full-width settings-toggles-card">
+                        <div class="toggle-item">
+                            <div class="toggle-info">
+                                <span class="toggle-label"><i class="fa-solid fa-power-off"></i> Trạng Thái Hoạt Động
+                                    (Active / Inactive)</span>
+                                <span class="toggle-desc">
+                                    <strong>Hoạt động:</strong> Tự động lấy video & render video từ kênh này.<br>
+                                    <strong>Không hoạt động:</strong> Dừng hoàn toàn, không lấy video và không render từ
+                                    kênh này.
+                                </span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="settingIsActive" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-item">
+                            <div class="toggle-info">
+                                <span class="toggle-label"><i class="fa-solid fa-cloud-arrow-down"></i> Tự Động Tải
+                                    Video Mới (Auto-Download)</span>
+                                <span class="toggle-desc">Khi phát hiện video mới qua RSS, tự động tải MP4 về thư
+                                    mục.</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="settingAutoDownload" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-item">
+                            <div class="toggle-info">
+                                <span class="toggle-label"><i class="fa-solid fa-scissors"></i> Tự Động Render AI Sau
+                                    Khi Tải (Auto-Render)</span>
+                                <span class="toggle-desc">Tự động lật hình, đổi tốc độ và cắt chuẩn TikTok 9:16 ngay khi
+                                    tải xong.</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="settingAutoRender" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="danger-zone mt-4">
+                    <h4><i class="fa-solid fa-triangle-exclamation"></i> Thao Tác Dữ Liệu</h4>
+                    <div class="danger-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" id="btnModalClearHistory"
+                            onclick="clearChannelHistoryFromModal(this)">
+                            <i class="fa-solid fa-trash-can"></i> Xóa Lịch Sử Video Đã Tải / Render
+                        </button>
+                        <button type="button" class="btn btn-danger btn-sm" id="btnModalDeleteChannel"
+                            onclick="deleteChannelFromModal(this)">
+                            <i class="fa-solid fa-trash"></i> Bỏ Lưu & Xóa Kênh
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeChannelSettingsModal()">Hủy</button>
+                <button class="btn btn-primary" id="btnSaveChannelSettings" onclick="saveChannelSettings(this)">
+                    <i class="fa-solid fa-floppy-disk"></i> Lưu Cài Đặt
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>
