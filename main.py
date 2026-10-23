@@ -4,6 +4,13 @@ import time
 import threading
 import webbrowser
 import uvicorn
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 try:
     import webview
 except ImportError:
@@ -73,7 +80,8 @@ if __name__ == "__main__":
                 dashboard_url,
                 width=1380,
                 height=860,
-                min_size=(1024, 700)
+                min_size=(1024, 700),
+                maximized=True
             )
             webview.start()
             sys.exit(0)

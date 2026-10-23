@@ -13,13 +13,39 @@ document.addEventListener('DOMContentLoaded', () => {
     applyColumnVisibility();
     startTopbarClock();
 
-    // Close column dropdown when clicking outside
+    // Close column dropdown & action menus when clicking outside
     document.addEventListener('click', (e) => {
         const container = document.querySelector('.col-picker-container');
         if (container && !container.contains(e.target)) {
             closeColumnDropdown();
         }
+        if (!e.target.closest('.action-dropdown-wrap')) {
+            closeAllActionMenus();
+        }
     });
+
+    // Close detail modal when clicking outside modal-content
+    const detailModal = document.getElementById('channelDetailModal');
+    if (detailModal) {
+        detailModal.addEventListener('click', (e) => {
+            if (e.target === detailModal) {
+                closeChannelDetailModal();
+            }
+        });
+    }
+
+    // Keyboard ESC listener for modals
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeAllActionMenus();
+            closeChannelDetailModal();
+        }
+    });
+
+    const btnSaveDetail = document.getElementById('btnToggleSaveFromDetail');
+    if (btnSaveDetail) {
+        btnSaveDetail.addEventListener('click', toggleSaveFromDetailModal);
+    }
 
     // Auto refresh logs & stats every 8 seconds
     setInterval(loadDashboardStats, 8000);
@@ -655,8 +681,8 @@ function renderYtChannelsTable() {
         const cid = c.channel_id || '';
         const channelUrl = c.url || (cid ? `https://www.youtube.com/channel/${cid}` : '#');
         const thumbImg = c.thumbnail_url
-            ? `<img src="${c.thumbnail_url}" alt="" style="width:38px; height:38px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;">`
-            : `<div style="width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; color:var(--text-muted); flex-shrink:0;"><i class="fa-brands fa-youtube"></i></div>`;
+            ? `<img src="${c.thumbnail_url}" alt="" class="channel-avatar-clickable" onclick="openChannelDetailModal(${c.originalIndex})" style="width:38px; height:38px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;" title="Bấm xem chi tiết kênh">`
+            : `<div class="channel-avatar-clickable" onclick="openChannelDetailModal(${c.originalIndex})" style="width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; color:var(--text-muted); flex-shrink:0;" title="Bấm xem chi tiết kênh"><i class="fa-brands fa-youtube"></i></div>`;
 
         return `
         <tr id="ch-row-${c.originalIndex}" class="${c.is_saved ? 'row-saved' : ''}">
@@ -664,7 +690,7 @@ function renderYtChannelsTable() {
                 <div style="display:flex; align-items:flex-start; gap:10px;">
                     ${thumbImg}
                     <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-                        <strong style="color:#fff; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</strong>
+                        <strong class="channel-title-link" onclick="openChannelDetailModal(${c.originalIndex})" title="Bấm xem chi tiết kênh: ${escapeHtml(c.title)}">${escapeHtml(c.title)}</strong>
                         ${handleText}
                         <div style="margin-top:3px;">
                             <a href="${escapeHtml(channelUrl)}" target="_blank" rel="noopener" class="channel-link-tag" title="Mở trang YouTube của kênh này">
@@ -717,17 +743,29 @@ function renderYtChannelsTable() {
                     : '<span class="badge badge-warning"><i class="fa-solid fa-clock-rotate-left"></i> Ít đăng</span>'}
             </td>
             <td data-col="col-actions">
-                <button 
-                    class="btn btn-sm ${c.is_saved ? 'btn-saved' : 'btn-secondary'}" 
-                    id="save-btn-${c.originalIndex}" 
-                    data-saved="${c.is_saved ? 'true' : 'false'}"
-                    onmouseenter="handleSaveBtnHover(this, true)"
-                    onmouseleave="handleSaveBtnHover(this, false)"
-                    onclick="toggleSaveChannel(${c.originalIndex})">
-                    ${c.is_saved
-                        ? '<i class="fa-solid fa-check"></i> Đã Lưu'
-                        : '<i class="fa-solid fa-bookmark"></i> Lưu Kênh'}
-                </button>
+                <div class="action-dropdown-wrap">
+                    <button type="button" class="btn-more-actions" id="btn-more-${c.originalIndex}" 
+                        onclick="toggleActionMenu(event, ${c.originalIndex})" 
+                        title="Tùy chọn thao tác">
+                        <i class="fa-solid fa-ellipsis"></i>
+                    </button>
+                    <div class="action-dropdown-menu" id="action-menu-${c.originalIndex}">
+                        <button type="button" class="action-dropdown-item" onclick="openChannelDetailModal(${c.originalIndex})">
+                            <i class="fa-solid fa-circle-info" style="color:var(--accent-cyan);"></i> Xem chi tiết
+                        </button>
+                        <button type="button" class="action-dropdown-item" onclick="toggleSaveFromMenu(${c.originalIndex})">
+                            <i class="fa-solid ${c.is_saved ? 'fa-bookmark-slash text-danger' : 'fa-bookmark text-gold'}"></i> 
+                            <span>${c.is_saved ? 'Bỏ lưu kênh' : 'Lưu kênh'}</span>
+                        </button>
+                        <div class="dropdown-divider"></div>
+                        <a href="${escapeHtml(channelUrl)}" target="_blank" rel="noopener" class="action-dropdown-item">
+                            <i class="fa-brands fa-youtube" style="color:#ef4444;"></i> Mở YouTube
+                        </a>
+                        <button type="button" class="action-dropdown-item" onclick="copyTextToClipboard('${escapeHtml(cid)}', 'Đã sao chép Channel ID!')">
+                            <i class="fa-solid fa-copy" style="color:#94a3b8;"></i> Sao chép ID
+                        </button>
+                    </div>
+                </div>
             </td>
         </tr>
         `;
@@ -932,6 +970,533 @@ async function toggleSaveChannel(origIdx) {
 // Giữ tương thích nếu có code gọi saveSingleChannel
 function saveSingleChannel(ch, rowIdx) {
     toggleSaveChannel(rowIdx);
+}
+
+// ==========================================================================
+// Action Dropdown & Channel Detail Modal Management
+// ==========================================================================
+let activeDetailChannel = null;
+
+function closeAllActionMenus() {
+    document.querySelectorAll('.action-dropdown-menu.show').forEach(m => m.classList.remove('show'));
+    document.querySelectorAll('.btn-more-actions.active').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.action-dropdown-wrap.active').forEach(w => w.classList.remove('active'));
+    document.querySelectorAll('tr.row-dropdown-open').forEach(r => r.classList.remove('row-dropdown-open'));
+}
+
+function toggleActionMenu(e, index) {
+    e.stopPropagation();
+    const menu = document.getElementById(`action-menu-${index}`);
+    const btn = document.getElementById(`btn-more-${index}`);
+    const row = document.getElementById(`ch-row-${index}`);
+    if (!menu) return;
+
+    const isOpen = menu.classList.contains('show');
+    closeAllActionMenus();
+
+    if (!isOpen) {
+        menu.classList.add('show');
+        if (btn) btn.classList.add('active');
+        const wrap = btn ? btn.closest('.action-dropdown-wrap') : null;
+        if (wrap) wrap.classList.add('active');
+        if (row) row.classList.add('row-dropdown-open');
+
+        // Check if button is near bottom of viewport
+        const rect = btn ? btn.getBoundingClientRect() : null;
+        if (rect && (window.innerHeight - rect.bottom < 200)) {
+            menu.classList.add('dropup');
+        } else {
+            menu.classList.remove('dropup');
+        }
+    }
+}
+
+function toggleSaveFromMenu(index) {
+    closeAllActionMenus();
+    toggleSaveChannel(index);
+}
+
+async function openChannelDetailModal(target) {
+    closeAllActionMenus();
+    let ch = null;
+    if (typeof target === 'number') {
+        ch = rawYtChannels[target];
+    } else if (typeof target === 'string') {
+        ch = rawYtChannels.find(c => c.channel_id === target) ||
+             cachedSavedChannels.find(c => c.channel_id === target);
+        // If not found in memory, fetch from backend API
+        if (!ch) {
+            try {
+                const res = await fetch(`/api/youtube/channels/${encodeURIComponent(target)}`);
+                if (res.ok) {
+                    ch = await res.json();
+                }
+            } catch (err) {
+                console.warn('Cannot fetch channel detail:', err);
+            }
+        }
+    } else if (target && typeof target === 'object') {
+        ch = target;
+    }
+
+    if (!ch) {
+        showToast('Không tìm thấy thông tin kênh!', true);
+        return;
+    }
+
+    activeDetailChannel = ch;
+
+    const modal = document.getElementById('channelDetailModal');
+    if (!modal) return;
+
+    // Header & Hero
+    const elAvatar = document.getElementById('detailChannelAvatar');
+    const elFallback = document.getElementById('detailAvatarFallback');
+    if (ch.thumbnail_url) {
+        elAvatar.src = ch.thumbnail_url;
+        elAvatar.style.display = 'block';
+        elFallback.style.display = 'none';
+        elAvatar.onerror = () => {
+            elAvatar.style.display = 'none';
+            elFallback.style.display = 'flex';
+        };
+    } else {
+        elAvatar.style.display = 'none';
+        elFallback.style.display = 'flex';
+    }
+
+    const elTitle = document.getElementById('detailChannelTitle');
+    if (elTitle) elTitle.textContent = ch.title || 'Kênh YouTube';
+
+    const elActiveBadge = document.getElementById('detailChannelActiveBadge');
+    if (elActiveBadge) {
+        if (ch.is_active) {
+            elActiveBadge.className = 'badge badge-success';
+            elActiveBadge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Đang hoạt động';
+        } else {
+            elActiveBadge.className = 'badge badge-warning';
+            elActiveBadge.innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Ít đăng bài';
+        }
+    }
+
+    const elHandle = document.getElementById('detailChannelHandle');
+    if (elHandle) {
+        elHandle.textContent = ch.handle ? ch.handle : '';
+        elHandle.style.display = ch.handle ? 'inline-block' : 'none';
+    }
+
+    const elId = document.getElementById('detailChannelId');
+    if (elId) elId.textContent = ch.channel_id || 'N/A';
+
+    const btnCopy = document.getElementById('btnCopyDetailId');
+    if (btnCopy) {
+        btnCopy.onclick = () => copyTextToClipboard(ch.channel_id || '', 'Đã sao chép Channel ID!');
+    }
+
+    const elCountry = document.getElementById('detailChannelCountry');
+    if (elCountry) {
+        elCountry.innerHTML = getCountryBadge(ch.country);
+    }
+
+    const elJoined = document.getElementById('detailChannelJoined');
+    if (elJoined) {
+        if (ch.created_at) {
+            let dStr = ch.created_at;
+            try {
+                const dt = new Date(ch.created_at);
+                if (!isNaN(dt.getTime())) {
+                    dStr = dt.toLocaleDateString('vi-VN');
+                }
+            } catch (e) {}
+            elJoined.innerHTML = `<i class="fa-regular fa-calendar"></i> Tham gia: ${dStr}`;
+            elJoined.style.display = 'inline-flex';
+        } else {
+            elJoined.style.display = 'none';
+        }
+    }
+
+    const ytLink = document.getElementById('detailChannelYtLink');
+    if (ytLink) {
+        const url = ch.url || (ch.channel_id ? `https://www.youtube.com/channel/${ch.channel_id}` : '#');
+        ytLink.href = url;
+    }
+
+    // Update Save button state
+    updateDetailModalSaveBtn();
+
+    // 8 KPI Stat Cards
+    const elSubs = document.getElementById('detailSubs');
+    if (elSubs) elSubs.textContent = ch.subscriber_count ? formatNumber(ch.subscriber_count) : 'Ẩn / Chưa rõ';
+
+    const elVideos = document.getElementById('detailVideos');
+    if (elVideos) elVideos.textContent = ch.video_count ? ch.video_count.toLocaleString() : 'N/A';
+
+    const elAvgViews = document.getElementById('detailAvgViews');
+    if (elAvgViews) elAvgViews.textContent = ch.avg_views ? formatNumber(ch.avg_views) : 'N/A';
+
+    const elTotalViews = document.getElementById('detailTotalViews');
+    if (elTotalViews) elTotalViews.textContent = ch.total_view_count ? formatNumber(ch.total_view_count) : 'N/A';
+
+    const elRatio = document.getElementById('detailRatio');
+    if (elRatio) {
+        const r = ch.views_per_sub_ratio || 0;
+        if (r > 0) {
+            const fire = r >= 1.0 ? '🔥 ' : '';
+            elRatio.textContent = `${fire}${r.toFixed(2)}x`;
+            elRatio.style.color = r >= 2.0 ? '#f87171' : (r >= 1.0 ? '#fbbf24' : '#38bdf8');
+        } else {
+            elRatio.textContent = '—';
+            elRatio.style.color = 'var(--text-muted)';
+        }
+    }
+
+    const elCadence = document.getElementById('detailCadence');
+    if (elCadence) {
+        elCadence.textContent = ch.cadence_description || (ch.upload_cadence_days > 0 ? `${ch.upload_cadence_days} ngày/vid` : 'Chưa rõ');
+    }
+
+    const elLastUpload = document.getElementById('detailLastUpload');
+    if (elLastUpload) {
+        const days = ch.days_since_last_upload !== undefined && ch.days_since_last_upload !== null ? `${ch.days_since_last_upload} ngày trước` : '';
+        elLastUpload.textContent = ch.last_upload_date ? `${ch.last_upload_date} ${days ? `(${days})` : ''}` : 'N/A';
+    }
+
+    const elStatus = document.getElementById('detailStatus');
+    if (elStatus) {
+        elStatus.textContent = ch.is_active ? '🟢 Hoạt động' : '⚪ Ít hoạt động';
+        elStatus.style.color = ch.is_active ? '#34d399' : '#94a3b8';
+    }
+
+    // Description
+    const elDesc = document.getElementById('detailDescription');
+    if (elDesc) {
+        const descText = (ch.description || '').trim();
+        if (descText) {
+            elDesc.textContent = descText;
+            elDesc.classList.remove('detail-no-data');
+        } else {
+            elDesc.textContent = 'Kênh này chưa có mô tả hoặc chưa được cập nhật từ YouTube.';
+            elDesc.classList.add('detail-no-data');
+        }
+    }
+
+    // Keywords / Tags
+    const elKwWrap = document.getElementById('detailKeywordsList');
+    if (elKwWrap) {
+        let kwList = [];
+        if (Array.isArray(ch.keywords)) {
+            kwList = ch.keywords;
+        } else if (typeof ch.keywords === 'string') {
+            try {
+                const parsed = JSON.parse(ch.keywords);
+                if (Array.isArray(parsed)) kwList = parsed;
+                else kwList = ch.keywords.split(',').map(s => s.trim()).filter(Boolean);
+            } catch (e) {
+                kwList = ch.keywords.split(',').map(s => s.trim()).filter(Boolean);
+            }
+        }
+        if (kwList && kwList.length > 0) {
+            elKwWrap.innerHTML = kwList.map(kw => `<span class="detail-tag-chip"><i class="fa-solid fa-tag"></i> ${escapeHtml(kw)}</span>`).join('');
+        } else {
+            elKwWrap.innerHTML = '<span class="detail-no-data">Không có thẻ từ khóa nào.</span>';
+        }
+    }
+
+    // Topics
+    const elTopWrap = document.getElementById('detailTopicsList');
+    if (elTopWrap) {
+        let topList = [];
+        if (Array.isArray(ch.topic_categories)) {
+            topList = ch.topic_categories;
+        } else if (typeof ch.topic_categories === 'string') {
+            try {
+                const parsed = JSON.parse(ch.topic_categories);
+                if (Array.isArray(parsed)) topList = parsed;
+            } catch (e) {}
+        }
+        if (topList && topList.length > 0) {
+            elTopWrap.innerHTML = topList.map(t => {
+                let clean = t;
+                if (typeof t === 'string' && t.includes('/wiki/')) {
+                    clean = decodeURIComponent(t.split('/wiki/')[1].replace(/_/g, ' '));
+                }
+                return `<span class="detail-topic-chip"><i class="fa-solid fa-shapes"></i> ${escapeHtml(clean)}</span>`;
+            }).join('');
+        } else {
+            elTopWrap.innerHTML = '<span class="detail-no-data">Không có danh mục chủ đề cụ thể.</span>';
+        }
+    }
+
+    // Recent Videos List
+    const elRecentSec = document.getElementById('detailRecentVideosSection');
+    const elRecentList = document.getElementById('detailRecentVideosList');
+    const elRecentBadge = document.getElementById('detailRecentVideosCount');
+    let recentVids = [];
+    if (Array.isArray(ch.recent_video_titles)) {
+        recentVids = ch.recent_video_titles;
+    } else if (typeof ch.recent_video_titles === 'string') {
+        try {
+            const parsed = JSON.parse(ch.recent_video_titles);
+            if (Array.isArray(parsed)) recentVids = parsed;
+        } catch (e) {}
+    }
+    if (recentVids && recentVids.length > 0) {
+        if (elRecentSec) elRecentSec.style.display = 'block';
+        if (elRecentBadge) elRecentBadge.textContent = `${recentVids.length} Video`;
+        if (elRecentList) {
+            elRecentList.innerHTML = recentVids.map(title => {
+                const searchQ = encodeURIComponent(title + ' ' + (ch.title || ''));
+                const ytUrl = `https://www.youtube.com/results?search_query=${searchQ}`;
+                return `
+                <a href="${ytUrl}" target="_blank" rel="noopener" class="detail-video-item" title="Bấm để mở video trên YouTube: ${escapeHtml(title)}">
+                    <i class="fa-brands fa-youtube" style="color:#ef4444; font-size:15px;"></i>
+                    <span class="detail-video-item-title">${escapeHtml(title)}</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square detail-video-link-icon"></i>
+                </a>
+                `;
+            }).join('');
+        }
+    } else {
+        if (elRecentSec) elRecentSec.style.display = 'none';
+    }
+
+    // Similar Channels
+    renderSimilarChannels(ch);
+
+    // Show modal
+    modal.classList.add('active');
+    modal.classList.add('show');
+}
+
+function closeChannelDetailModal() {
+    const modal = document.getElementById('channelDetailModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.classList.remove('show');
+    }
+    activeDetailChannel = null;
+}
+
+function updateDetailModalSaveBtn() {
+    const btn = document.getElementById('btnToggleSaveFromDetail');
+    if (!btn || !activeDetailChannel) return;
+
+    if (activeDetailChannel.is_saved) {
+        btn.className = 'btn btn-secondary btn-sm';
+        btn.innerHTML = '<i class="fa-solid fa-check text-success"></i> <span id="detailSaveBtnText">Đã Lưu Kênh</span>';
+    } else {
+        btn.className = 'btn btn-primary btn-sm';
+        btn.innerHTML = '<i class="fa-solid fa-bookmark"></i> <span id="detailSaveBtnText">Lưu Kênh</span>';
+    }
+}
+
+async function toggleSaveFromDetailModal() {
+    if (!activeDetailChannel) return;
+    const ch = activeDetailChannel;
+    const cid = ch.channel_id;
+
+    if (ch.is_saved) {
+        try {
+            const res = await fetch('/api/youtube/unsave-channel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_id: cid })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                ch.is_saved = false;
+                const raw = rawYtChannels.find(c => c.channel_id === cid);
+                if (raw) raw.is_saved = false;
+                showToast(`Đã bỏ lưu kênh "${ch.title}"!`);
+                updateDetailModalSaveBtn();
+                renderYtChannelsTable();
+                loadDashboardStats();
+                renderSimilarChannels(ch);
+            } else {
+                showToast('Lỗi khi bỏ lưu: ' + (data.message || 'Thất bại'), true);
+            }
+        } catch (err) {
+            showToast('Lỗi kết nối: ' + err.message, true);
+        }
+    } else {
+        try {
+            await fetch('/api/youtube/save-channels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([ch])
+            });
+            ch.is_saved = true;
+            const raw = rawYtChannels.find(c => c.channel_id === cid);
+            if (raw) raw.is_saved = true;
+            showToast(`Đã lưu kênh "${ch.title}"!`);
+            updateDetailModalSaveBtn();
+            renderYtChannelsTable();
+            loadDashboardStats();
+            renderSimilarChannels(ch);
+        } catch (err) {
+            showToast('Lỗi khi lưu kênh: ' + err.message, true);
+        }
+    }
+}
+
+function renderSimilarChannels(target) {
+    const grid = document.getElementById('similarChannelsGrid');
+    const badge = document.getElementById('similarChannelsBadge');
+    if (!grid) return;
+
+    const pool = [...rawYtChannels];
+    cachedSavedChannels.forEach(sc => {
+        if (!pool.some(p => p.channel_id === sc.channel_id)) {
+            pool.push(sc);
+        }
+    });
+
+    const others = pool.filter(c => c.channel_id !== target.channel_id);
+    if (!others.length) {
+        grid.innerHTML = '<div class="card-empty-state" style="grid-column: 1/-1;"><p>Chưa có kênh tương đồng nào trong dữ liệu quét hiện tại.</p></div>';
+        if (badge) badge.textContent = '0 Kênh';
+        return;
+    }
+
+    const targetCountry = (target.country || '').toUpperCase();
+    const targetSubs = target.subscriber_count || 0;
+    const targetWords = (target.title || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
+    let targetKw = [];
+    if (Array.isArray(target.keywords)) targetKw = target.keywords;
+    else if (typeof target.keywords === 'string') {
+        try { targetKw = JSON.parse(target.keywords); } catch (e) { targetKw = target.keywords.split(','); }
+    }
+    targetKw = targetKw.map(k => String(k).toLowerCase().trim()).filter(Boolean);
+
+    const scored = others.map(other => {
+        let score = 0;
+        // Country match
+        if (targetCountry && (other.country || '').toUpperCase() === targetCountry) {
+            score += 4;
+        }
+        // Keywords match
+        let otherKw = [];
+        if (Array.isArray(other.keywords)) otherKw = other.keywords;
+        else if (typeof other.keywords === 'string') {
+            try { otherKw = JSON.parse(other.keywords); } catch (e) { otherKw = other.keywords.split(','); }
+        }
+        otherKw = otherKw.map(k => String(k).toLowerCase().trim()).filter(Boolean);
+        for (const k of targetKw) {
+            if (otherKw.includes(k)) score += 3;
+        }
+        // Title words match
+        const otherTitleLower = (other.title || '').toLowerCase();
+        for (const w of targetWords) {
+            if (otherTitleLower.includes(w)) score += 2;
+        }
+        // Viral Ratio similarity
+        if (target.views_per_sub_ratio && other.views_per_sub_ratio) {
+            const diff = Math.abs(target.views_per_sub_ratio - other.views_per_sub_ratio);
+            if (diff <= 0.5) score += 3;
+        }
+        // Subs range
+        if (targetSubs > 0 && other.subscriber_count > 0) {
+            const ratio = other.subscriber_count / targetSubs;
+            if (ratio >= 0.4 && ratio <= 2.5) score += 2;
+        }
+        if (other.is_active) score += 1;
+
+        return { channel: other, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const topSimilar = scored.slice(0, 9).map(s => s.channel);
+
+    if (badge) badge.textContent = `${topSimilar.length} Kênh gợi ý`;
+
+    grid.innerHTML = topSimilar.map(c => {
+        const thumb = c.thumbnail_url
+            ? `<img src="${c.thumbnail_url}" alt="" class="similar-avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+               <div class="similar-avatar-fallback" style="display:none;"><i class="fa-brands fa-youtube"></i></div>`
+            : `<div class="similar-avatar-fallback"><i class="fa-brands fa-youtube"></i></div>`;
+        const r = c.views_per_sub_ratio || 0;
+        const fire = r >= 1.0 ? '🔥 ' : '';
+        const ratioText = r > 0 ? `${fire}${r.toFixed(2)}x` : '—';
+
+        return `
+            <div class="similar-channel-card">
+                <div class="similar-card-top">
+                    ${thumb}
+                    <div class="similar-meta">
+                        <div class="similar-title" onclick="openChannelDetailModal('${escapeHtml(c.channel_id)}')" title="${escapeHtml(c.title)}">
+                            ${escapeHtml(c.title)}
+                        </div>
+                        <div class="similar-handle">
+                            ${c.handle ? escapeHtml(c.handle) : escapeHtml(c.channel_id)}
+                        </div>
+                    </div>
+                    ${getCountryBadge(c.country)}
+                </div>
+
+                <div class="similar-metrics-row">
+                    <div class="similar-metric-item">
+                        <span class="similar-metric-label">Subscribers</span>
+                        <span class="similar-metric-val">${c.subscriber_count ? formatNumber(c.subscriber_count) : 'Ẩn'}</span>
+                    </div>
+                    <div class="similar-metric-item">
+                        <span class="similar-metric-label">Lượt Xem TB</span>
+                        <span class="similar-metric-val">${c.avg_views ? formatNumber(c.avg_views) : 'N/A'}</span>
+                    </div>
+                    <div class="similar-metric-item">
+                        <span class="similar-metric-label">Viral Ratio</span>
+                        <span class="similar-metric-val" style="color:${r >= 2.0 ? '#f87171' : (r >= 1.0 ? '#fbbf24' : '#38bdf8')};">${ratioText}</span>
+                    </div>
+                </div>
+
+                <div class="similar-card-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="openChannelDetailModal('${escapeHtml(c.channel_id)}')">
+                        <i class="fa-solid fa-circle-info text-cyan"></i> Chi tiết
+                    </button>
+                    <button type="button" class="btn btn-sm ${c.is_saved ? 'btn-saved' : 'btn-primary'}" onclick="toggleSaveChannelById('${escapeHtml(c.channel_id)}')">
+                        ${c.is_saved ? '<i class="fa-solid fa-check"></i> Đã Lưu' : '<i class="fa-solid fa-bookmark"></i> Lưu Kênh'}
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function toggleSaveChannelById(channelId) {
+    const rawIdx = rawYtChannels.findIndex(c => c.channel_id === channelId);
+    if (rawIdx !== -1) {
+        await toggleSaveChannel(rawIdx);
+        if (activeDetailChannel) {
+            updateDetailModalSaveBtn();
+            renderSimilarChannels(activeDetailChannel);
+        }
+        return;
+    }
+    const saved = cachedSavedChannels.find(c => c.channel_id === channelId);
+    if (saved) {
+        try {
+            const res = await fetch('/api/youtube/unsave-channel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_id: channelId })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast(`Đã bỏ lưu kênh!`);
+                await loadSavedChannels();
+                loadDashboardStats();
+                if (activeDetailChannel) {
+                    if (activeDetailChannel.channel_id === channelId) {
+                        activeDetailChannel.is_saved = false;
+                        updateDetailModalSaveBtn();
+                    }
+                    renderSimilarChannels(activeDetailChannel);
+                }
+            }
+        } catch (e) {
+            showToast('Lỗi: ' + e.message, true);
+        }
+    }
 }
 
 async function loadSavedChannels() {
@@ -1371,7 +1936,7 @@ function renderSavedChannelsTable() {
                 <td>
                     <div style="display:flex; flex-direction:column; gap:2px;">
                         ${aliasTag}
-                        <span class="channel-title-main font-semibold">${displayTitle}</span>
+                        <span class="channel-title-main font-semibold channel-title-link" onclick="openChannelDetailModal('${escapeHtml(c.channel_id)}')" title="Bấm xem chi tiết kênh">${displayTitle}</span>
                         ${origTitle}
                         <div class="channel-meta-row">
                             <span class="channel-id-tag">${escapeHtml(c.channel_id)}</span>

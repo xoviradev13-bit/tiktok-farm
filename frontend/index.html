@@ -989,6 +989,173 @@
         </div>
     </div>
 
+    <!-- Modal Xem Chi Tiết Kênh (Channel Detail Interface) -->
+    <div class="modal" id="channelDetailModal">
+        <div class="modal-content glass-panel modal-channel-detail">
+            <!-- Modal Header / Hero Banner -->
+            <div class="channel-detail-hero">
+                <div class="channel-hero-cover"></div>
+                <div class="channel-hero-content">
+                    <div class="channel-hero-avatar-wrap">
+                        <img id="detailChannelAvatar" src="" alt="Avatar" class="channel-hero-avatar">
+                        <div id="detailAvatarFallback" class="channel-hero-avatar-fallback">
+                            <i class="fa-brands fa-youtube"></i>
+                        </div>
+                    </div>
+                    <div class="channel-hero-meta">
+                        <div class="channel-hero-title-row">
+                            <h2 id="detailChannelTitle" class="channel-hero-title">--</h2>
+                            <span id="detailChannelActiveBadge" class="badge badge-success">--</span>
+                        </div>
+                        <div class="channel-hero-sub-row">
+                            <span id="detailChannelHandle" class="channel-hero-handle">--</span>
+                            <div class="channel-id-chip">
+                                <span id="detailChannelId">--</span>
+                                <button type="button" class="btn-copy-mini" id="btnCopyDetailId" title="Sao chép ID">
+                                    <i class="fa-solid fa-copy"></i>
+                                </button>
+                            </div>
+                            <span id="detailChannelCountry" class="channel-country-pill">--</span>
+                            <span id="detailChannelJoined" class="channel-joined-pill"><i class="fa-regular fa-calendar"></i> --</span>
+                        </div>
+                    </div>
+                    <div class="channel-hero-actions">
+                        <a id="detailChannelYtLink" href="#" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">
+                            <i class="fa-brands fa-youtube text-danger"></i> Mở YouTube
+                        </a>
+                        <button type="button" class="btn btn-primary btn-sm" id="btnToggleSaveFromDetail">
+                            <i class="fa-solid fa-bookmark"></i> <span id="detailSaveBtnText">Lưu Kênh</span>
+                        </button>
+                    </div>
+                </div>
+                <button type="button" class="modal-corner-close" onclick="closeChannelDetailModal()" title="Đóng">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="modal-body channel-detail-body">
+                <!-- 8 Quick KPI Stat Cards -->
+                <div class="detail-kpi-grid">
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-blue"><i class="fa-solid fa-users"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Subscribers</span>
+                            <span class="detail-kpi-val" id="detailSubs">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-cyan"><i class="fa-solid fa-video"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Tổng Số Video</span>
+                            <span class="detail-kpi-val" id="detailVideos">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-purple"><i class="fa-solid fa-eye"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Lượt Xem TB</span>
+                            <span class="detail-kpi-val" id="detailAvgViews">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-indigo"><i class="fa-solid fa-chart-line"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Tổng Lượt Xem</span>
+                            <span class="detail-kpi-val" id="detailTotalViews">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-gold"><i class="fa-solid fa-fire"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Tỷ Lệ View/Sub</span>
+                            <span class="detail-kpi-val" id="detailRatio">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-green"><i class="fa-solid fa-calendar-check"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Tần Suất Đăng</span>
+                            <span class="detail-kpi-val" id="detailCadence">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-pink"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Video Mới Nhất</span>
+                            <span class="detail-kpi-val" id="detailLastUpload">--</span>
+                        </div>
+                    </div>
+                    <div class="detail-kpi-card">
+                        <div class="detail-kpi-icon bg-emerald"><i class="fa-solid fa-signal"></i></div>
+                        <div class="detail-kpi-info">
+                            <span class="detail-kpi-label">Trạng Thái Kênh</span>
+                            <span class="detail-kpi-val" id="detailStatus">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Details Section: Description & Tags/Topics -->
+                <div class="detail-sections-row">
+                    <!-- Left: Description -->
+                    <div class="detail-card detail-description-card">
+                        <div class="detail-card-header">
+                            <h4><i class="fa-solid fa-align-left text-primary"></i> Mô Tả & Giới Thiệu Kênh</h4>
+                        </div>
+                        <div class="detail-description-box" id="detailDescription">
+                            Chưa có mô tả cho kênh này.
+                        </div>
+                    </div>
+
+                    <!-- Right: Tags & Topics -->
+                    <div class="detail-card detail-tags-card">
+                        <div class="detail-card-header">
+                            <h4><i class="fa-solid fa-tags text-cyan"></i> Thẻ Từ Khóa (Tags / Keywords)</h4>
+                        </div>
+                        <div class="detail-tags-wrap" id="detailKeywordsList">
+                            <span class="detail-no-data">Không có thẻ từ khóa nào</span>
+                        </div>
+
+                        <div class="detail-card-header mt-3">
+                            <h4><i class="fa-solid fa-layer-group text-purple"></i> Phân Loại Chủ Đề (Topic Categories)</h4>
+                        </div>
+                        <div class="detail-tags-wrap" id="detailTopicsList">
+                            <span class="detail-no-data">Không có chủ đề phân loại</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Videos List (if any) -->
+                <div class="detail-card mt-3" id="detailRecentVideosSection">
+                    <div class="detail-card-header">
+                        <h4><i class="fa-solid fa-film text-gold"></i> Các Video Đăng Tải Gần Đây</h4>
+                        <span class="badge badge-info" id="detailRecentVideosCount">0 Video</span>
+                    </div>
+                    <div class="detail-recent-videos-list" id="detailRecentVideosList">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+
+                <!-- Similar Channels List Below -->
+                <div class="detail-card mt-4 similar-channels-section">
+                    <div class="detail-card-header">
+                        <div>
+                            <h4><i class="fa-solid fa-shapes text-cyan"></i> Danh Sách Kênh Tương Đồng Cùng Ngách</h4>
+                            <p class="panel-sub" style="margin: 2px 0 0 0; font-size: 12px;">Các kênh có chủ đề, từ khóa, quốc gia hoặc tần suất đăng bài tương đồng</p>
+                        </div>
+                        <span class="badge badge-info" id="similarChannelsBadge">0 Kênh gợi ý</span>
+                    </div>
+                    <div class="similar-channels-grid mt-3" id="similarChannelsGrid">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer detail-modal-footer">
+                <button class="btn btn-secondary" onclick="closeChannelDetailModal()">Đóng</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Cài Đặt Chi Tiết Kênh -->
     <div class="modal" id="channelSettingsModal">
         <div class="modal-content glass-panel modal-lg">

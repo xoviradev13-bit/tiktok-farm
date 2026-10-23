@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException
@@ -227,6 +228,39 @@ def list_saved_channels():
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+@app.get("/api/youtube/channels/{channel_id}")
+def get_channel_detail(channel_id: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT c.*, 
+            (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id) as downloaded_count,
+            (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id AND v.status = 'rendered') as rendered_count
+        FROM channels c 
+        WHERE c.channel_id = ?
+    ''', (channel_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        ch = dict(row)
+        for field in ["keywords", "topic_categories", "recent_video_titles"]:
+            if isinstance(ch.get(field), str):
+                try:
+                    ch[field] = json.loads(ch[field])
+                except Exception:
+                    ch[field] = []
+        ch["is_saved"] = True
+        return ch
+
+    # Check scanner cache if not in saved channels table
+    cached = yt_scanner._load_cached([channel_id])
+    if channel_id in cached:
+        ch = cached[channel_id]
+        ch["is_saved"] = False
+        return ch
+
+    raise HTTPException(status_code=404, detail="Không tìm thấy thông tin kênh")
 
 @app.post("/api/youtube/channels/update")
 def update_channel_settings(req: UpdateChannelSettingsRequest):
