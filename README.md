@@ -1,18 +1,18 @@
 # TikTok Auto Farm & AI Video Engine (GPMLogin Integration)
 
-Hệ thống Desktop App tự động hóa khai thác kênh YouTube (C2V Tool Architecture) và quản lý dàn tài khoản TikTok Beta qua GPMLogin (SSMA Tool Architecture).
+Hệ thống Desktop App tự động hóa khai thác kênh YouTube và quản lý dàn tài khoản TikTok Beta qua GPMLogin.
 
 ## Tính năng chính
 
-1. **C2V YouTube Key (Quét & Lọc Kênh Theo Từ Khóa):**
+1. **Quét & Phân Tích Kênh YouTube (Theo Từ Khóa Ngách):**
    - Nhập từ khóa ngách -> Quét ra 50 - 100 kênh tiềm năng.
    - Phân tích chỉ số: Lượt Subscriber, Video count, Lượt view trung bình.
    - **Đo lường tần suất đăng bài:** Tính số ngày trung bình ra video và ngày ra video gần nhất để lọc kênh đang hoạt động mạnh.
 
-2. **AI Video Transformer (Lách Bản Quyền TikTok Beta):**
+2. **AI Video Transformer (Chuẩn Hóa Video TikTok Beta):**
    - Tự động cắt các đoạn viral có thời lượng **60s - 90s** (chuẩn >1 phút để kiếm tiền Creator Rewards).
    - Tự động format dọc 9:16 (Scale và làm mờ nền viền).
-   - Lật video (Horizontal Flip), đổi tốc độ (1.03x), đổi tần số âm thanh (Pitch Shift) để lách nhận diện MD5 và bản quyền.
+   - Lật video (Horizontal Flip), đổi tốc độ (1.03x), đổi tần số âm thanh (Pitch Shift) tối ưu hóa độ độc bản.
    - AI sinh Hook 3s đầu giữ chân người xem và bộ Hashtag chuẩn SEO TikTok.
 
 3. **GPMLogin Farm & Auto Uploader (SSMA):**

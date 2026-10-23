@@ -93,6 +93,31 @@ class SaveApiKeysRequest(BaseModel):
 class TestApiKeyRequest(BaseModel):
     key: str
 
+class CreateCampaignRequest(BaseModel):
+    name: str
+    channel_id: Optional[str] = ""
+    channel_ids: Optional[List[str]] = []
+    gpm_profile_id: Optional[int] = None
+    gpm_profile_ids: Optional[List[int]] = []
+    distribution_mode: Optional[str] = "round_robin"
+    download_dir: Optional[str] = ""
+    render_dir: Optional[str] = ""
+    subtitle_enabled: Optional[int] = 0
+    subtitle_style: Optional[str] = "karaoke_yellow"
+    aspect_ratio: Optional[str] = "9:16_blur"
+    preset_name: Optional[str] = "TikTok Beta Chuẩn 9:16"
+    video_duration: Optional[int] = 65
+    speed_factor: Optional[float] = 1.03
+    flip_horizontal: Optional[int] = 1
+    daily_limit: Optional[int] = 3
+    post_schedule: Optional[str] = "11:30, 18:00, 20:30"
+    post_frequency: Optional[str] = "daily"
+    post_interval_days: Optional[int] = 1
+    post_days_of_week: Optional[str] = "mon,tue,wed,thu,fri,sat,sun"
+    random_delay_minutes: Optional[int] = 10
+    warmup_mode: Optional[int] = 0
+    is_active: Optional[int] = 1
+
 # --- Dashboard API ---
 @app.get("/api/dashboard/stats")
 def get_dashboard_stats():
@@ -166,7 +191,7 @@ def list_gpm_profiles():
     conn.close()
     return rows
 
-# --- YouTube Intelligence API (C2V Key) ---
+# --- YouTube Intelligence API ---
 @app.post("/api/youtube/search")
 def search_youtube_channels(req: SearchKeywordRequest):
     """Tìm kiếm và lọc kênh theo từ khóa và tần suất ra video"""
@@ -359,6 +384,17 @@ def get_pipeline_status():
     cursor.execute("SELECT status, COUNT(*) as cnt FROM videos GROUP BY status")
     video_stats = {r["status"]: r["cnt"] for r in cursor.fetchall()}
 
+    cursor.execute("SELECT COUNT(*) FROM videos WHERE download_path IS NOT NULL AND download_path != ''")
+    downloaded = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM videos WHERE rendered_path IS NOT NULL AND rendered_path != ''")
+    rendered = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM upload_tasks WHERE status = 'queued'")
+    queued = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM upload_tasks WHERE status = 'completed'")
+    uploaded = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM campaigns WHERE is_active = 1")
+    active_campaigns = cursor.fetchone()[0]
+
     cursor.execute('''
         SELECT v.id, v.title, v.duration, v.status, v.created_at, v.channel_id,
                COALESCE(c.display_name, c.title, 'Kênh ngoài') as channel_name
@@ -378,20 +414,195 @@ def get_pipeline_status():
     conn.close()
 
     return {
+        "status": "success",
         "scheduler_running": scheduler.is_running,
+        "scheduler_interval_minutes": getattr(scheduler, "rss_interval_minutes", 15),
+        "upload_interval_seconds": getattr(scheduler, "upload_interval_seconds", 60),
+        "auto_download": getattr(scheduler, "auto_download", True),
+        "auto_render": getattr(scheduler, "auto_render", True),
+        "max_videos_per_scan": getattr(scheduler, "max_videos_per_scan", 5),
+        "channel_delay_seconds": getattr(scheduler, "channel_delay_seconds", 2),
         "active_channels": active_channels,
         "total_channels": total_channels,
+        "downloaded_count": downloaded,
+        "rendered_count": rendered,
+        "queued_count": queued,
+        "uploaded_count": uploaded,
+        "active_campaigns": active_campaigns,
         "video_stats": {
             "pending": video_stats.get("pending", 0),
-            "downloaded": video_stats.get("downloaded", 0),
+            "downloaded": video_stats.get("downloaded", downloaded),
             "rendering": video_stats.get("rendering", 0),
-            "rendered": video_stats.get("rendered", 0),
-            "uploaded": video_stats.get("uploaded", 0),
+            "rendered": video_stats.get("rendered", rendered),
+            "uploaded": video_stats.get("uploaded", uploaded),
             "error": video_stats.get("error", 0)
         },
         "recent_pipeline": recent_videos,
         "recent_upload_tasks": recent_tasks
     }
+
+@app.post("/api/pipeline/toggle-scheduler")
+def toggle_pipeline_scheduler():
+    if scheduler.is_running:
+        scheduler.stop()
+        log_event("WARNING", "Đã tạm dừng Background Automation Scheduler.")
+        running_flag = "0"
+        state = False
+    else:
+        scheduler.start()
+        log_event("INFO", f"Đã bật chạy Background Automation Scheduler ({scheduler.rss_interval_minutes}p/lần).")
+        running_flag = "1"
+        state = True
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('scheduler_running', ?)", (running_flag,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return {"status": "success", "running": state, "scheduler_running": state}
+
+@app.post("/api/pipeline/scan-all")
+def scan_all_channels_pipeline(bg_tasks: BackgroundTasks):
+    def _do_scan():
+        try:
+            total = yt_monitor.scan_all_monitored_channels(
+                max_per_channel=getattr(scheduler, "max_videos_per_scan", 5),
+                delay=float(getattr(scheduler, "channel_delay_seconds", 2))
+            )
+            log_event("INFO", f"[PIPELINE SCAN] Quét xong toàn bộ kênh, tìm thấy {total} video mới.")
+        except Exception as e:
+            log_event("ERROR", f"[PIPELINE SCAN] Lỗi khi quét: {e}")
+    bg_tasks.add_task(_do_scan)
+    return {"status": "success", "message": "Đang chạy quét toàn bộ kênh ngầm..."}
+
+# --- Auto Campaigns API ---
+@app.get("/api/campaigns")
+def list_campaigns():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT cp.*,
+               COALESCE(c.display_name, c.title, cp.channel_id) as channel_name,
+               gp.name as gpm_profile_name,
+               gp.tiktok_username
+        FROM campaigns cp
+        LEFT JOIN channels c ON cp.channel_id = c.channel_id
+        LEFT JOIN gpm_profiles gp ON cp.gpm_profile_id = gp.id
+        ORDER BY cp.id DESC
+    ''')
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    for r in rows:
+        # Parse channel_ids
+        ch_list = []
+        if r.get("channel_ids"):
+            try:
+                ch_list = json.loads(r["channel_ids"])
+            except Exception:
+                ch_list = [r["channel_id"]] if r.get("channel_id") else []
+        elif r.get("channel_id"):
+            ch_list = [r["channel_id"]]
+        r["channel_ids_list"] = ch_list
+        r["channel_count"] = len(ch_list)
+
+        # Parse gpm_profile_ids
+        gpm_list = []
+        if r.get("gpm_profile_ids"):
+            try:
+                gpm_list = json.loads(r["gpm_profile_ids"])
+            except Exception:
+                gpm_list = [r["gpm_profile_id"]] if r.get("gpm_profile_id") else []
+        elif r.get("gpm_profile_id"):
+            gpm_list = [r["gpm_profile_id"]]
+        r["gpm_profile_ids_list"] = gpm_list
+        r["gpm_count"] = len(gpm_list)
+    return rows
+
+@app.post("/api/campaigns")
+def create_campaign(req: CreateCampaignRequest):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    ch_ids = req.channel_ids if req.channel_ids else ([req.channel_id] if req.channel_id else [])
+    gpm_ids = req.gpm_profile_ids if req.gpm_profile_ids else ([req.gpm_profile_id] if req.gpm_profile_id else [])
+    main_ch = ch_ids[0] if ch_ids else ""
+    main_gpm = gpm_ids[0] if gpm_ids else None
+
+    cursor.execute('''
+        INSERT INTO campaigns (
+            name, channel_id, gpm_profile_id, channel_ids, gpm_profile_ids,
+            distribution_mode, download_dir, render_dir, subtitle_enabled,
+            subtitle_style, aspect_ratio, preset_name, video_duration,
+            speed_factor, flip_horizontal, daily_limit, post_schedule,
+            post_frequency, post_interval_days, post_days_of_week,
+            random_delay_minutes, warmup_mode, is_active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        req.name,
+        main_ch,
+        main_gpm,
+        json.dumps(ch_ids),
+        json.dumps(gpm_ids),
+        req.distribution_mode or 'round_robin',
+        req.download_dir or '',
+        req.render_dir or '',
+        1 if req.subtitle_enabled else 0,
+        req.subtitle_style or 'karaoke_yellow',
+        req.aspect_ratio or '9:16_blur',
+        req.preset_name or 'TikTok Beta Chuẩn 9:16',
+        req.video_duration or 65,
+        req.speed_factor or 1.03,
+        1 if req.flip_horizontal else 0,
+        req.daily_limit or 3,
+        req.post_schedule or '11:30, 18:00, 20:30',
+        req.post_frequency or 'daily',
+        req.post_interval_days or 1,
+        req.post_days_of_week or 'mon,tue,wed,thu,fri,sat,sun',
+        req.random_delay_minutes if req.random_delay_minutes is not None else 10,
+        1 if req.warmup_mode else 0,
+        1 if req.is_active else 0
+    ))
+    campaign_id = cursor.lastrowid
+    # Persist last used download/render dirs in settings table for future campaigns
+    if req.download_dir:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_download_dir', ?)", (req.download_dir.strip(),))
+    if req.render_dir:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_render_dir', ?)", (req.render_dir.strip(),))
+    conn.commit()
+    conn.close()
+    log_event("INFO", f"Đã tạo chiến dịch: '{req.name}' ({len(ch_ids)} kênh -> {len(gpm_ids)} nick GPM)")
+    return {"status": "success", "id": campaign_id, "channels_count": len(ch_ids), "profiles_count": len(gpm_ids)}
+
+@app.post("/api/campaigns/{campaign_id}/toggle")
+def toggle_campaign(campaign_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT is_active, name FROM campaigns WHERE id = ?", (campaign_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy chiến dịch")
+    new_state = 0 if row["is_active"] == 1 else 1
+    cursor.execute("UPDATE campaigns SET is_active = ? WHERE id = ?", (new_state, campaign_id))
+    conn.commit()
+    conn.close()
+    log_event("INFO", f"Chuyển trạng thái chiến dịch '{row['name']}' sang: {'Bật' if new_state else 'Tắt'}")
+    return {"status": "success", "is_active": new_state}
+
+@app.delete("/api/campaigns/{campaign_id}")
+def delete_campaign(campaign_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+    conn.commit()
+    conn.close()
+    log_event("INFO", f"Đã xóa chiến dịch ID {campaign_id}")
+    return {"status": "success"}
+
+
 
 # --- Video Download & AI Edit API ---
 @app.post("/api/video/download")
@@ -405,9 +616,30 @@ def download_video(req: DownloadVideoRequest, bg_tasks: BackgroundTasks):
 def list_videos():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM videos ORDER BY id DESC")
+    cursor.execute('''
+        SELECT v.*, COALESCE(c.display_name, c.title, 'Dán trực tiếp') as channel_name
+        FROM videos v
+        LEFT JOIN channels c ON v.channel_id = c.channel_id
+        ORDER BY v.id DESC
+    ''')
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
+    data_dir = BASE_DIR / "data"
+    for r in rows:
+        if r.get("rendered_path") and os.path.exists(r["rendered_path"]):
+            try:
+                rel = os.path.relpath(r["rendered_path"], data_dir).replace("\\", "/")
+                r["media_url"] = f"/media/{rel}"
+            except Exception:
+                r["media_url"] = ""
+        elif r.get("download_path") and os.path.exists(r["download_path"]):
+            try:
+                rel = os.path.relpath(r["download_path"], data_dir).replace("\\", "/")
+                r["media_url"] = f"/media/{rel}"
+            except Exception:
+                r["media_url"] = ""
+        else:
+            r["media_url"] = ""
     return rows
 
 @app.post("/api/video/render")
@@ -474,28 +706,39 @@ def test_telegram_alert():
     )
     return {"status": "success" if success else "failed", "message": "Đã gửi test alert Telegram"}
 
-# --- API Key Management ---
+# --- API Key Management & Settings Persistence ---
 @app.get("/api/settings/keys")
 def get_api_keys():
     import os
     import backend.config as cfg
-    raw = os.getenv("YOUTUBE_API_KEYS", os.getenv("YOUTUBE_API_KEY", ""))
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings")
+    db_settings = dict(cursor.fetchall())
+    conn.close()
+
+    raw = os.getenv("YOUTUBE_API_KEYS", os.getenv("YOUTUBE_API_KEY", db_settings.get("YOUTUBE_API_KEYS", "")))
+    gemini = os.getenv("GEMINI_API_KEY", db_settings.get("GEMINI_API_KEY", cfg.GEMINI_API_KEY))
+    openai = os.getenv("OPENAI_API_KEY", db_settings.get("OPENAI_API_KEY", cfg.OPENAI_API_KEY))
+    tele_token = os.getenv("TELEGRAM_BOT_TOKEN", db_settings.get("TELEGRAM_BOT_TOKEN", cfg.TELEGRAM_BOT_TOKEN))
+    tele_chat = os.getenv("TELEGRAM_CHAT_ID", db_settings.get("TELEGRAM_CHAT_ID", cfg.TELEGRAM_CHAT_ID))
+    gpm_url = os.getenv("GPM_API_BASE_URL", db_settings.get("GPM_API_BASE_URL", cfg.GPM_API_BASE_URL))
+
     pool_status = yt_scanner.key_pool.get_keys_status()
     return {
         "youtube_api_keys": raw,
         "youtube_key_pool": pool_status,
-        "gemini_api_key": cfg.GEMINI_API_KEY,
-        "openai_api_key": cfg.OPENAI_API_KEY,
-        "telegram_bot_token": cfg.TELEGRAM_BOT_TOKEN,
-        "telegram_chat_id": cfg.TELEGRAM_CHAT_ID,
-        "gpm_api_base_url": cfg.GPM_API_BASE_URL,
+        "gemini_api_key": gemini,
+        "openai_api_key": openai,
+        "telegram_bot_token": tele_token,
+        "telegram_chat_id": tele_chat,
+        "gpm_api_base_url": gpm_url,
     }
 
 @app.post("/api/settings/keys")
 def save_api_keys(req: SaveApiKeysRequest):
     updates = {}
     if req.youtube_api_keys is not None:
-        # Normalize: strip spaces around commas, deduplicate
         keys = [k.strip() for k in req.youtube_api_keys.replace(";", ",").replace("\n", ",").split(",") if k.strip()]
         raw = ",".join(keys)
         updates["YOUTUBE_API_KEY"] = raw
@@ -510,24 +753,176 @@ def save_api_keys(req: SaveApiKeysRequest):
         updates["TELEGRAM_CHAT_ID"] = req.telegram_chat_id.strip()
     if req.gpm_api_base_url is not None and req.gpm_api_base_url.strip():
         updates["GPM_API_BASE_URL"] = req.gpm_api_base_url.strip()
+
+    # 1. Save to .env file
     save_env_config(updates)
+
+    # 2. Persist to SQLite settings table
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        for k, v in updates.items():
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log_event("WARNING", f"Lỗi lưu cấu hình vào DB: {e}")
+
     yt_scanner.reload_keys(updates.get("YOUTUBE_API_KEYS", ""))
-    log_event("INFO", f"Đã cập nhật cấu hình API keys: {list(updates.keys())}")
+    log_event("INFO", f"Đã cập nhật cấu hình API keys và lưu vào DB: {list(updates.keys())}")
     return {"status": "ok", "message": "Đã lưu cấu hình thành công", "pool_size": yt_scanner.key_pool.total_keys}
+
+class UpdateSchedulerSettingsRequest(BaseModel):
+    interval_minutes: int = 15
+    upload_interval_seconds: int = 60
+    auto_download: bool = True
+    auto_render: bool = True
+    max_videos_per_scan: int = 5
+    channel_delay_seconds: int = 2
+
+@app.get("/api/settings/defaults")
+def get_default_settings():
+    """Retrieve saved folder defaults and general configurations from SQLite."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings")
+    settings_dict = dict(cursor.fetchall())
+    conn.close()
+    return {
+        "download_dir": settings_dict.get("default_download_dir", "data/downloads"),
+        "render_dir": settings_dict.get("default_render_dir", "data/rendered"),
+        "scheduler_running": settings_dict.get("scheduler_running", "1") == "1",
+        "scheduler_interval_minutes": int(settings_dict.get("scheduler_interval_minutes", getattr(scheduler, "rss_interval_minutes", 15))),
+        "upload_interval_seconds": int(settings_dict.get("upload_interval_seconds", getattr(scheduler, "upload_interval_seconds", 60))),
+        "auto_download": settings_dict.get("auto_download", "1") == "1",
+        "auto_render": settings_dict.get("auto_render", "1") == "1",
+        "max_videos_per_scan": int(settings_dict.get("max_videos_per_scan", getattr(scheduler, "max_videos_per_scan", 5))),
+        "channel_delay_seconds": int(settings_dict.get("channel_delay_seconds", getattr(scheduler, "channel_delay_seconds", 2)))
+    }
+
+@app.get("/api/settings/scheduler")
+def get_scheduler_settings():
+    """Get current scheduler configuration."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings")
+    settings_dict = dict(cursor.fetchall())
+    conn.close()
+    return {
+        "status": "success",
+        "interval_minutes": int(settings_dict.get("scheduler_interval_minutes", getattr(scheduler, "rss_interval_minutes", 15))),
+        "upload_interval_seconds": int(settings_dict.get("upload_interval_seconds", getattr(scheduler, "upload_interval_seconds", 60))),
+        "auto_download": settings_dict.get("auto_download", "1") == "1",
+        "auto_render": settings_dict.get("auto_render", "1") == "1",
+        "max_videos_per_scan": int(settings_dict.get("max_videos_per_scan", getattr(scheduler, "max_videos_per_scan", 5))),
+        "channel_delay_seconds": int(settings_dict.get("channel_delay_seconds", getattr(scheduler, "channel_delay_seconds", 2))),
+        "scheduler_running": scheduler.is_running
+    }
+
+@app.post("/api/settings/scheduler")
+def update_scheduler_settings(req: UpdateSchedulerSettingsRequest):
+    """Save and apply advanced scheduler settings."""
+    scheduler.update_config(
+        interval_minutes=req.interval_minutes,
+        upload_interval_seconds=req.upload_interval_seconds,
+        auto_download=req.auto_download,
+        auto_render=req.auto_render,
+        max_videos_per_scan=req.max_videos_per_scan,
+        channel_delay_seconds=req.channel_delay_seconds
+    )
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('scheduler_interval_minutes', ?)", (str(req.interval_minutes),))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('upload_interval_seconds', ?)", (str(req.upload_interval_seconds),))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_download', ?)", ("1" if req.auto_download else "0",))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_render', ?)", ("1" if req.auto_render else "0",))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('max_videos_per_scan', ?)", (str(req.max_videos_per_scan),))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('channel_delay_seconds', ?)", (str(req.channel_delay_seconds),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log_event("WARNING", f"Lỗi lưu cấu hình scheduler vào DB: {e}")
+
+    log_event("INFO", f"Đã cập nhật cấu hình tự động: Quét RSS {req.interval_minutes}p/lần, kiểm tra Upload {req.upload_interval_seconds}s, Max/kênh {req.max_videos_per_scan}.")
+    return {
+        "status": "success",
+        "message": f"Đã lưu cấu hình tự động quét ({req.interval_minutes} phút/lần) thành công!",
+        "settings": {
+            "interval_minutes": req.interval_minutes,
+            "upload_interval_seconds": req.upload_interval_seconds,
+            "auto_download": req.auto_download,
+            "auto_render": req.auto_render,
+            "max_videos_per_scan": req.max_videos_per_scan,
+            "channel_delay_seconds": req.channel_delay_seconds,
+            "scheduler_running": scheduler.is_running
+        }
+    }
 
 @app.post("/api/settings/test-key")
 def test_youtube_key(req: TestApiKeyRequest):
     result = yt_scanner.test_key(req.key)
     return result
 
+@app.post("/api/utils/browse-folder")
+def browse_folder():
+    """Opens a native Windows FolderBrowserDialog to pick a directory path."""
+    import subprocess
+    try:
+        ps_cmd = (
+            'Add-Type -AssemblyName System.Windows.Forms; '
+            '$d = New-Object System.Windows.Forms.FolderBrowserDialog; '
+            '$d.Description = "Chọn thư mục lưu trữ video TikTok Farm"; '
+            '$d.ShowNewFolderButton = $true; '
+            'if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }'
+        )
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        selected = proc.stdout.strip()
+        if selected:
+            norm_path = selected.replace("\\", "/")
+            return {"status": "success", "path": norm_path}
+        return {"status": "cancelled", "path": ""}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "path": ""}
+
 @app.on_event("startup")
 def on_startup():
     try:
-        scheduler.start()
+        # 1. Restore environment settings from SQLite settings table
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM settings")
+        db_settings = dict(cursor.fetchall())
+        conn.close()
+        for k, v in db_settings.items():
+            if v and (k not in os.environ or not os.environ[k]):
+                os.environ[k] = v
+        if "YOUTUBE_API_KEYS" in db_settings:
+            yt_scanner.reload_keys(db_settings["YOUTUBE_API_KEYS"])
+        log_event("INFO", f"Đã phục hồi {len(db_settings)} cấu hình từ cơ sở dữ liệu SQLite.")
+    except Exception as e:
+        log_event("WARNING", f"Lỗi phục hồi cấu hình từ DB settings: {e}")
+
+    try:
+        # 2. Check if scheduler was previously paused or enabled
+        scheduler.load_settings()
+        should_run = db_settings.get("scheduler_running", "1") == "1" if 'db_settings' in locals() else True
+        if should_run:
+            scheduler.start()
+            log_event("INFO", f"Tự động kích hoạt Background Automation Scheduler ({scheduler.rss_interval_minutes}p/chu kỳ).")
     except Exception as e:
         log_event("WARNING", f"Không thể tự khởi động Background Scheduler: {e}")
 
-# --- Static Frontend Mount ---
+# --- Static Frontend & Media Mount ---
+DATA_DIR = BASE_DIR / "data"
+if DATA_DIR.exists():
+    app.mount("/media", StaticFiles(directory=str(DATA_DIR)), name="media")
+
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 

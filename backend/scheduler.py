@@ -15,6 +15,51 @@ class BackgroundScheduler:
     def __init__(self):
         self.is_running = False
         self._thread = None
+        self.rss_interval_minutes = 15
+        self.upload_interval_seconds = 60
+        self.auto_download = True
+        self.auto_render = True
+        self.max_videos_per_scan = 5
+        self.channel_delay_seconds = 2
+        self.load_settings()
+
+    def load_settings(self):
+        """Đọc cấu hình scheduler từ SQLite settings table"""
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM settings")
+            db_settings = dict(cursor.fetchall())
+            conn.close()
+            if "scheduler_interval_minutes" in db_settings:
+                self.rss_interval_minutes = max(1, int(db_settings["scheduler_interval_minutes"]))
+            if "upload_interval_seconds" in db_settings:
+                self.upload_interval_seconds = max(10, int(db_settings["upload_interval_seconds"]))
+            if "auto_download" in db_settings:
+                self.auto_download = db_settings["auto_download"] == "1"
+            if "auto_render" in db_settings:
+                self.auto_render = db_settings["auto_render"] == "1"
+            if "max_videos_per_scan" in db_settings:
+                self.max_videos_per_scan = max(1, int(db_settings["max_videos_per_scan"]))
+            if "channel_delay_seconds" in db_settings:
+                self.channel_delay_seconds = max(0, int(db_settings["channel_delay_seconds"]))
+        except Exception as e:
+            log_event("WARNING", f"Lỗi đọc cấu hình scheduler từ DB: {e}")
+
+    def update_config(self, interval_minutes=None, upload_interval_seconds=None, auto_download=None, auto_render=None, max_videos_per_scan=None, channel_delay_seconds=None):
+        """Cập nhật cấu hình runtime ngay lập tức"""
+        if interval_minutes is not None:
+            self.rss_interval_minutes = max(1, int(interval_minutes))
+        if upload_interval_seconds is not None:
+            self.upload_interval_seconds = max(10, int(upload_interval_seconds))
+        if auto_download is not None:
+            self.auto_download = bool(auto_download)
+        if auto_render is not None:
+            self.auto_render = bool(auto_render)
+        if max_videos_per_scan is not None:
+            self.max_videos_per_scan = max(1, int(max_videos_per_scan))
+        if channel_delay_seconds is not None:
+            self.channel_delay_seconds = max(0, int(channel_delay_seconds))
 
     def start(self):
         if self.is_running:
@@ -22,7 +67,7 @@ class BackgroundScheduler:
         self.is_running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        log_event("INFO", "Background Scheduler đã khởi động.")
+        log_event("INFO", f"Background Scheduler đã khởi động (chu kỳ quét {self.rss_interval_minutes} phút).")
 
     def stop(self):
         self.is_running = False
@@ -34,25 +79,31 @@ class BackgroundScheduler:
         while self.is_running:
             now = time.time()
 
-            # 1. Quét RSS định kỳ mỗi 15 phút (900s)
-            if now - last_rss_check > 900:
-                try:
-                    total_new = yt_monitor.scan_all_monitored_channels()
-                    if total_new > 0:
-                        log_event("INFO", f"[SCHEDULER] Đã phát hiện và tải về {total_new} video mới qua RSS.")
-                except Exception as e:
-                    log_event("WARNING", f"[SCHEDULER] Lỗi quét RSS: {str(e)}")
+            # 1. Quét RSS định kỳ theo rss_interval_minutes
+            rss_delay_secs = max(60, self.rss_interval_minutes * 60)
+            if now - last_rss_check > rss_delay_secs:
+                if self.auto_download:
+                    try:
+                        total_new = yt_monitor.scan_all_monitored_channels(
+                            max_per_channel=self.max_videos_per_scan,
+                            delay=float(self.channel_delay_seconds)
+                        )
+                        if total_new > 0:
+                            log_event("INFO", f"[SCHEDULER] Đã quét chu kỳ ({self.rss_interval_minutes}p): phát hiện và tải về {total_new} video mới qua RSS.")
+                    except Exception as e:
+                        log_event("WARNING", f"[SCHEDULER] Lỗi quét RSS: {str(e)}")
                 last_rss_check = now
 
-            # 2. Kiểm tra các tác vụ upload tới giờ đăng (mỗi 60s)
-            if now - last_upload_check > 60:
+            # 2. Kiểm tra các tác vụ upload tới giờ đăng theo upload_interval_seconds
+            upload_delay_secs = max(10, self.upload_interval_seconds)
+            if now - last_upload_check > upload_delay_secs:
                 try:
                     self._process_pending_uploads()
                 except Exception as e:
                     log_event("WARNING", f"[SCHEDULER] Lỗi xử lý hàng đợi upload: {str(e)}")
                 last_upload_check = now
 
-            time.sleep(10)
+            time.sleep(5)
 
     def _process_pending_uploads(self):
         conn = get_connection()

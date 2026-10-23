@@ -1,7 +1,10 @@
 // State
-let currentTab = 'tab-overview';
+let currentTab = 'tab-auto-pipeline';
 let cachedGpmProfiles = [];
 let cachedVideos = [];
+let cachedCampaigns = [];
+let activeStudioVideo = null;
+let currentStudioFilter = 'all';
 
 // DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -10,6 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGpmProfiles();
     loadVideos();
     loadSavedChannels();
+    loadCampaigns();
+    loadPipelineStatus();
+    loadSchedulerSettings();
     applyColumnVisibility();
     startTopbarClock();
 
@@ -34,11 +40,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const campaignModal = document.getElementById('newCampaignModal');
+    if (campaignModal) {
+        campaignModal.addEventListener('click', (e) => {
+            if (e.target === campaignModal) {
+                closeNewCampaignModal();
+            }
+        });
+    }
+
+    const schedModal = document.getElementById('schedulerSettingsModal');
+    if (schedModal) {
+        schedModal.addEventListener('click', (e) => {
+            if (e.target === schedModal) {
+                closeSchedulerSettingsModal();
+            }
+        });
+    }
+
     // Keyboard ESC listener for modals
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeAllActionMenus();
             closeChannelDetailModal();
+            closeNewCampaignModal();
+            closeSchedulerSettingsModal();
         }
     });
 
@@ -54,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Toast notification helper
 function showToast(message, isError = false) {
     const toast = document.getElementById('toast');
+    if (!toast) return;
     toast.textContent = message;
     toast.style.borderColor = isError ? 'rgba(239, 68, 68, 0.5)' : 'rgba(16, 185, 129, 0.5)';
     toast.classList.add('show');
@@ -69,7 +96,6 @@ function toggleSidebar() {
     if (btn) {
         btn.setAttribute('data-tooltip', collapsed ? 'Mở rộng' : 'Thu gọn');
     }
-    // Sync main-content margin immediately via CSS var (handled by CSS classes)
 }
 
 // Navigation Tabs
@@ -85,6 +111,24 @@ function setupNavigation() {
 }
 
 function switchTab(tabId) {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+    }
+    // Aliases support
+    if (tabId === 'tab-youtube') {
+        tabId = 'tab-sources';
+        switchSourceSubTab('search');
+    } else if (tabId === 'tab-saved-channels') {
+        tabId = 'tab-sources';
+        switchSourceSubTab('saved');
+    } else if (tabId === 'tab-pipeline') {
+        tabId = 'tab-auto-pipeline';
+    } else if (tabId === 'tab-ai-editor') {
+        tabId = 'tab-video-studio';
+    }
+
+    currentTab = tabId;
+
     // Update active nav item
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const activeNav = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
@@ -95,35 +139,43 @@ function switchTab(tabId) {
     const activePane = document.getElementById(tabId);
     if (activePane) activePane.classList.add('active');
 
+    // Update Stepper Banner Highlight
+    document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
+    if (tabId === 'tab-sources') {
+        document.getElementById('step1Indicator')?.classList.add('active');
+    } else if (tabId === 'tab-video-studio') {
+        document.getElementById('step2Indicator')?.classList.add('active');
+    } else if (tabId === 'tab-auto-pipeline') {
+        document.getElementById('step3Indicator')?.classList.add('active');
+    } else if (tabId === 'tab-gpm-farm' || tabId === 'tab-tracker') {
+        document.getElementById('step4Indicator')?.classList.add('active');
+    }
+
     // Update Topbar Title & Subtitle for every sidebar item
     const tabMeta = {
+        'tab-auto-pipeline': {
+            title: 'Chiến Dịch Tự Động Hóa (Auto-Pilot Hub)',
+            sub: 'Chuỗi tự động hóa: Quét RSS Kênh → Tải MP4 → AI Render 9:16 Beta → Tự Đăng Lên TikTok GPM'
+        },
+        'tab-video-studio': {
+            title: 'Studio & Công Thức Biên Tập Video 9:16',
+            sub: 'Tùy chỉnh mẫu cắt >60s chuẩn Quỹ Beta, lách bản quyền & xem trước trên mô phỏng điện thoại'
+        },
+        'tab-sources': {
+            title: 'Quản Lý Kênh YouTube Nguồn',
+            sub: 'Theo dõi RSS feed các kênh chất lượng cao và quét từ khóa tìm kênh mới'
+        },
+        'tab-gpm-farm': {
+            title: 'Dàn Tài Khoản GPMLogin & Mốc 10K Follow',
+            sub: 'Quản lý profiles TikTok, theo dõi tăng trưởng follower và cấu hình báo động Telegram'
+        },
         'tab-overview': {
             title: 'Bảng Điều Khiển Tổng Quan',
             sub: 'Thống kê tổng quan hệ thống, tài nguyên và tiến độ tăng trưởng'
         },
-        'tab-youtube': {
-            title: 'C2V Key: Quét Kênh YouTube',
-            sub: 'Phân tích kênh ngách, chu kỳ đăng bài và tỷ lệ View/Sub tiềm năng'
-        },
-        'tab-saved-channels': {
-            title: 'Quản Lý Kênh YouTube Đang Giám Sát',
-            sub: 'Danh sách kênh đã lưu trữ để khai thác video & theo dõi định kỳ'
-        },
-        'tab-pipeline': {
-            title: 'Tiến Trình Tự Động Hóa (Auto Pipeline)',
-            sub: 'Luồng tự động: Quét Kênh → Tải Video → AI Re-render → Đăng TikTok GPM'
-        },
-        'tab-ai-editor': {
-            title: 'AI Video Editor & Lách Bản Quyền',
-            sub: 'Render video 9:16 Shorts/Reels, chèn phụ đề AI & xử lý bản quyền tự động'
-        },
-        'tab-gpm-farm': {
-            title: 'Quản Lý Dàn Tài Khoản GPMLogin',
-            sub: 'Danh sách profile TikTok, trạng thái GPM, nuôi nick & tự động hóa'
-        },
-        'tab-tracker': {
-            title: 'Theo Dõi Đủ Điều Kiện 10K Follow',
-            sub: 'Giám sát chỉ số tài khoản và thông báo Telegram khi đạt điều kiện kiếm tiền'
+        'tab-pipeline-queue': {
+            title: 'Hàng Đợi & Lịch Đăng (Kanban Pipeline)',
+            sub: 'Theo dõi 4 công đoạn: Mới Tải Về → Đã Render 9:16 → Chờ Giờ Đăng → Đã Đăng'
         },
         'tab-logs': {
             title: 'Nhật Ký Hoạt Động Hệ Thống',
@@ -140,12 +192,39 @@ function switchTab(tabId) {
     if (titleEl) titleEl.textContent = meta.title;
     if (subEl) subEl.textContent = meta.sub;
 
-    if (tabId === 'tab-saved-channels') {
+    if (tabId === 'tab-auto-pipeline') {
+        loadCampaigns();
+        loadPipelineStatus();
+    } else if (tabId === 'tab-video-studio') {
+        loadStudioVideos();
+    } else if (tabId === 'tab-sources') {
         loadSavedChannels();
-    } else if (tabId === 'tab-pipeline') {
+    } else if (tabId === 'tab-pipeline-queue') {
         loadPipelineStatus();
     } else if (tabId === 'tab-settings') {
         loadApiKeySettings();
+        loadSchedulerSettings();
+    }
+}
+
+// Subnav switcher for Sources
+function switchSourceSubTab(sub) {
+    const btnSaved = document.getElementById('btnSubnavSaved');
+    const btnSearch = document.getElementById('btnSubnavSearch');
+    const viewSaved = document.getElementById('sourceSubViewSaved');
+    const viewSearch = document.getElementById('sourceSubViewSearch');
+
+    if (sub === 'saved') {
+        btnSaved?.classList.add('active');
+        btnSearch?.classList.remove('active');
+        if (viewSaved) viewSaved.style.display = 'block';
+        if (viewSearch) viewSearch.style.display = 'none';
+        loadSavedChannels();
+    } else {
+        btnSearch?.classList.add('active');
+        btnSaved?.classList.remove('active');
+        if (viewSaved) viewSaved.style.display = 'none';
+        if (viewSearch) viewSearch.style.display = 'block';
     }
 }
 
@@ -172,6 +251,16 @@ async function loadDashboardStats() {
         document.getElementById('statVideos').textContent = data.total_videos;
         document.getElementById('statProfiles').textContent = data.total_profiles;
         document.getElementById('stat10k').textContent = data.eligible_10k_count;
+
+        // Stepper stats sync
+        const sSource = document.getElementById('stepperSourceStats');
+        if (sSource) sSource.textContent = `${data.total_channels} kênh theo dõi`;
+
+        const sGpm = document.getElementById('stepperGpmStats');
+        if (sGpm) sGpm.textContent = `${data.total_profiles} nick GPM (${data.eligible_10k_count} đạt 10K)`;
+
+        const sSourceBadge = document.getElementById('sourceSavedCountBadge');
+        if (sSourceBadge) sSourceBadge.textContent = data.total_channels;
 
         // Update GPM status
         const gpmStatusText = document.getElementById('gpmStatusText');
@@ -205,7 +294,7 @@ async function loadDashboardStats() {
     }
 }
 
-// 2. YouTube Search (C2V Key) & Table State
+// 2. YouTube Search & Table State
 let rawYtChannels = [];
 let currentSortField = 'default';
 let currentSortDirection = 'asc';
@@ -977,37 +1066,67 @@ function saveSingleChannel(ch, rowIdx) {
 // ==========================================================================
 let activeDetailChannel = null;
 
+// Tracks original parent so we can return teleported menus
+const _menuOriginalParent = new Map();
+
 function closeAllActionMenus() {
-    document.querySelectorAll('.action-dropdown-menu.show').forEach(m => m.classList.remove('show'));
+    document.querySelectorAll('.action-dropdown-menu.show').forEach(m => {
+        m.classList.remove('show');
+        m.style.top = '';
+        m.style.bottom = '';
+        m.style.left = '';
+        // Restore to original parent if teleported
+        const originalParent = _menuOriginalParent.get(m.id);
+        if (originalParent && m.parentElement === document.body) {
+            originalParent.appendChild(m);
+        }
+        _menuOriginalParent.delete(m.id);
+    });
     document.querySelectorAll('.btn-more-actions.active').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.action-dropdown-wrap.active').forEach(w => w.classList.remove('active'));
     document.querySelectorAll('tr.row-dropdown-open').forEach(r => r.classList.remove('row-dropdown-open'));
 }
 
-function toggleActionMenu(e, index) {
+function toggleActionMenu(e, id) {
     e.stopPropagation();
-    const menu = document.getElementById(`action-menu-${index}`);
-    const btn = document.getElementById(`btn-more-${index}`);
-    const row = document.getElementById(`ch-row-${index}`);
+    const menu = document.getElementById(`action-menu-${id}`);
+    const btn = document.getElementById(`btn-more-${id}`);
+    const row = (btn ? btn.closest('tr') : null) || document.getElementById(`ch-row-${id}`);
     if (!menu) return;
 
     const isOpen = menu.classList.contains('show');
     closeAllActionMenus();
 
-    if (!isOpen) {
-        menu.classList.add('show');
+    if (!isOpen && btn) {
         if (btn) btn.classList.add('active');
         const wrap = btn ? btn.closest('.action-dropdown-wrap') : null;
         if (wrap) wrap.classList.add('active');
         if (row) row.classList.add('row-dropdown-open');
 
-        // Check if button is near bottom of viewport
-        const rect = btn ? btn.getBoundingClientRect() : null;
-        if (rect && (window.innerHeight - rect.bottom < 200)) {
+        const rect = btn.getBoundingClientRect();
+        const menuWidth = 185;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        // Teleport to body to escape table overflow/transform stacking context
+        _menuOriginalParent.set(menu.id, menu.parentElement);
+        document.body.appendChild(menu);
+
+        menu.style.position = 'fixed';
+        menu.style.minWidth = menuWidth + 'px';
+        menu.style.left = Math.max(4, rect.right - menuWidth) + 'px';
+        menu.style.top = '';
+        menu.style.bottom = '';
+
+        if (spaceBelow < 260 && spaceAbove > spaceBelow) {
+            menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
             menu.classList.add('dropup');
         } else {
+            menu.style.top = (rect.bottom + 4) + 'px';
             menu.classList.remove('dropup');
         }
+
+        menu.classList.add('show');
     }
 }
 
@@ -1269,6 +1388,9 @@ async function openChannelDetailModal(target) {
 }
 
 function closeChannelDetailModal() {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+    }
     const modal = document.getElementById('channelDetailModal');
     if (modal) {
         modal.classList.remove('active');
@@ -1532,6 +1654,8 @@ async function downloadSingleVideo() {
             showToast('Tải video thành công!');
             document.getElementById('directDownloadUrl').value = '';
             loadVideos();
+            loadStudioVideos();
+            loadDashboardStats();
         } else {
             showToast('Lỗi: ' + (data.detail || 'Không xác định'), true);
         }
@@ -1704,6 +1828,13 @@ async function loadGpmProfiles() {
                     </div>
                 </div>
             `).join('');
+        } else {
+            eligibleGrid.innerHTML = `
+                <div class="card-empty-state">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <p>Hệ thống đang theo dõi tăng trưởng các tài khoản TikTok. Khi có tài khoản đạt mốc 10.000 Followers (đủ điều kiện tham gia TikTok Creator Rewards), thông tin tài khoản sẽ hiển thị tại đây và hệ thống sẽ tự động gửi thông báo qua Telegram.</p>
+                </div>
+            `;
         }
     } catch (err) {
         console.error('Lỗi nạp profiles:', err);
@@ -1871,6 +2002,92 @@ async function loadSavedChannels(btn) {
     }
 }
 
+// Saved Channels Sorting & Filtering State
+let savedSortField = 'default';
+let savedSortDirection = 'asc';
+let savedFilterCountry = 'all';
+let savedFilterMinViews = 0;
+let savedFilterMinSubs = 0;
+let savedFilterCadence = 'all';
+
+function handleSavedSortSelectChange(val) {
+    savedSortField = val;
+    renderSavedChannelsTable();
+}
+
+function toggleSavedSortDirection() {
+    savedSortDirection = savedSortDirection === 'asc' ? 'desc' : 'asc';
+    updateSavedSortDirectionBtn();
+    renderSavedChannelsTable();
+}
+
+function updateSavedSortDirectionBtn() {
+    const icon = document.getElementById('savedSortDirIcon');
+    const text = document.getElementById('savedSortDirText');
+    if (icon) icon.className = savedSortDirection === 'asc' ? 'fa-solid fa-arrow-down-short-wide' : 'fa-solid fa-arrow-down-wide-short';
+    if (text) text.textContent = savedSortDirection === 'asc' ? 'Tăng dần' : 'Giảm dần';
+}
+
+function handleSavedHeaderSort(field) {
+    if (savedSortField === field) {
+        toggleSavedSortDirection();
+    } else {
+        savedSortField = field;
+        savedSortDirection = (field === 'title' || field === 'country') ? 'asc' : 'desc';
+        const sel = document.getElementById('savedSortSelect');
+        if (sel) sel.value = field;
+        updateSavedSortDirectionBtn();
+        renderSavedChannelsTable();
+    }
+}
+
+function handleSavedFilterCountryChange(val) {
+    savedFilterCountry = val;
+    renderSavedChannelsTable();
+}
+
+function handleSavedFilterViewsChange(val) {
+    savedFilterMinViews = parseInt(val, 10) || 0;
+    renderSavedChannelsTable();
+}
+
+function handleSavedFilterSubsChange(val) {
+    savedFilterMinSubs = parseInt(val, 10) || 0;
+    renderSavedChannelsTable();
+}
+
+function handleSavedFilterCadenceChange(val) {
+    savedFilterCadence = val;
+    renderSavedChannelsTable();
+}
+
+function resetSavedFilters() {
+    savedSortField = 'default';
+    savedSortDirection = 'asc';
+    savedFilterCountry = 'all';
+    savedFilterMinViews = 0;
+    savedFilterMinSubs = 0;
+    savedFilterCadence = 'all';
+
+    const selSort = document.getElementById('savedSortSelect');
+    if (selSort) selSort.value = 'default';
+    const selCountry = document.getElementById('savedFilterCountrySelect');
+    if (selCountry) selCountry.value = 'all';
+    const selViews = document.getElementById('savedFilterViewsSelect');
+    if (selViews) selViews.value = '0';
+    const selSubs = document.getElementById('savedFilterSubsSelect');
+    if (selSubs) selSubs.value = '0';
+    const selCadence = document.getElementById('savedFilterCadenceSelect');
+    if (selCadence) selCadence.value = 'all';
+    const selStatus = document.getElementById('filterSavedStatus');
+    if (selStatus) selStatus.value = 'all';
+    const inpKw = document.getElementById('searchSavedKeyword');
+    if (inpKw) inpKw.value = '';
+
+    updateSavedSortDirectionBtn();
+    renderSavedChannelsTable();
+}
+
 function renderSavedChannelsTable() {
     const tbody = document.getElementById('savedChannelsBody');
     if (!tbody) return;
@@ -1880,49 +2097,142 @@ function renderSavedChannelsTable() {
 
     let list = cachedSavedChannels.slice();
 
+    // 1. Status Filter
     if (statusFilter === 'active') {
         list = list.filter(c => c.is_active === 1);
     } else if (statusFilter === 'inactive') {
         list = list.filter(c => c.is_active === 0);
     }
 
+    // 2. Country Filter
+    if (savedFilterCountry !== 'all') {
+        list = list.filter(c => (c.country || 'N/A').toUpperCase() === savedFilterCountry.toUpperCase());
+    }
+
+    // 3. Min Views Filter
+    if (savedFilterMinViews > 0) {
+        list = list.filter(c => (c.avg_views || 0) >= savedFilterMinViews);
+    }
+
+    // 4. Min Subs Filter
+    if (savedFilterMinSubs > 0) {
+        list = list.filter(c => (c.subscriber_count || 0) >= savedFilterMinSubs);
+    }
+
+    // 5. Cadence Filter
+    if (savedFilterCadence === 'daily') {
+        list = list.filter(c => c.upload_cadence_days > 0 && c.upload_cadence_days <= 1.0);
+    } else if (savedFilterCadence === 'frequent') {
+        list = list.filter(c => c.upload_cadence_days > 0 && c.upload_cadence_days <= 3.0);
+    } else if (savedFilterCadence === 'weekly') {
+        list = list.filter(c => c.upload_cadence_days > 0 && c.upload_cadence_days <= 7.0);
+    }
+
+    // 6. Keyword Filter
     if (keyword) {
         list = list.filter(c => {
             const title = (c.title || '').toLowerCase();
             const displayName = (c.display_name || '').toLowerCase();
             const cid = (c.channel_id || '').toLowerCase();
-            return title.includes(keyword) || displayName.includes(keyword) || cid.includes(keyword);
+            const handle = (c.handle || '').toLowerCase();
+            const country = (c.country || '').toLowerCase();
+            return title.includes(keyword) || displayName.includes(keyword) || cid.includes(keyword) || handle.includes(keyword) || country.includes(keyword);
         });
     }
 
+    // 7. Sort
+    if (savedSortField !== 'default') {
+        list.sort((a, b) => {
+            let res = 0;
+            if (savedSortField === 'title') {
+                const ta = a.display_name || a.title || '';
+                const tb = b.display_name || b.title || '';
+                res = ta.localeCompare(tb, 'vi', { sensitivity: 'base' });
+            } else if (savedSortField === 'country') {
+                res = (a.country || '').localeCompare(b.country || '');
+            } else if (savedSortField === 'subscriber_count') {
+                res = (a.subscriber_count || 0) - (b.subscriber_count || 0);
+            } else if (savedSortField === 'video_count') {
+                res = (a.video_count || 0) - (b.video_count || 0);
+            } else if (savedSortField === 'avg_views') {
+                res = (a.avg_views || 0) - (b.avg_views || 0);
+            } else if (savedSortField === 'total_view_count') {
+                res = (a.total_view_count || 0) - (b.total_view_count || 0);
+            } else if (savedSortField === 'views_per_sub_ratio') {
+                res = (a.views_per_sub_ratio || 0) - (b.views_per_sub_ratio || 0);
+            } else if (savedSortField === 'days_since_last_upload') {
+                const da = a.days_since_last_upload !== undefined && a.days_since_last_upload !== null ? a.days_since_last_upload : 9999;
+                const db = b.days_since_last_upload !== undefined && b.days_since_last_upload !== null ? b.days_since_last_upload : 9999;
+                res = da - db;
+            } else if (savedSortField === 'upload_cadence_days') {
+                const ca = a.upload_cadence_days > 0 ? a.upload_cadence_days : 9999;
+                const cb = b.upload_cadence_days > 0 ? b.upload_cadence_days : 9999;
+                res = ca - cb;
+            } else if (savedSortField === 'is_active') {
+                res = (a.is_active || 0) - (b.is_active || 0);
+            }
+            return savedSortDirection === 'asc' ? res : -res;
+        });
+    }
+
+    const badgeCount = document.getElementById('badgeSavedCount');
+    if (badgeCount) badgeCount.textContent = `${list.length}/${cachedSavedChannels.length} Kênh`;
+
+    // Update Header Sort Icons
+    ['title', 'country', 'subscriber_count', 'video_count', 'avg_views', 'days_since_last_upload', 'upload_cadence_days', 'is_active'].forEach(f => {
+        const thMap = {
+            'title': 'th-saved-title',
+            'country': 'th-saved-country',
+            'subscriber_count': 'th-saved-subs',
+            'video_count': 'th-saved-videos',
+            'avg_views': 'th-saved-avg-views',
+            'days_since_last_upload': 'th-saved-last-upload',
+            'upload_cadence_days': 'th-saved-cadence',
+            'is_active': 'th-saved-active'
+        };
+        const th = document.getElementById(thMap[f]);
+        if (!th) return;
+        const icon = th.querySelector('.sort-icon');
+        if (!icon) return;
+        if (savedSortField === f) {
+            th.classList.add('sorted');
+            icon.className = savedSortDirection === 'asc' ? 'fa-solid fa-sort-up sort-icon active' : 'fa-solid fa-sort-down sort-icon active';
+        } else {
+            th.classList.remove('sorted');
+            icon.className = 'fa-solid fa-sort sort-icon';
+        }
+    });
+
     if (!list.length) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted"><i class="fa-solid fa-folder-open" style="font-size: 24px; opacity: 0.3; display: block; margin-bottom: 8px;"></i>Không tìm thấy kênh nào phù hợp. Hãy qua tab <strong>"Quét Kênh C2V"</strong> để tìm và lưu thêm kênh!</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-muted"><i class="fa-solid fa-folder-open" style="font-size: 24px; opacity: 0.3; display: block; margin-bottom: 8px;"></i>Không tìm thấy kênh nào phù hợp.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = list.map(c => {
+        const cid = c.channel_id || '';
         const hasDisplayName = c.display_name && c.display_name.trim();
-        const displayTitle = hasDisplayName ? escapeHtml(c.display_name) : escapeHtml(c.title || c.channel_id);
-        const origTitle = hasDisplayName ? `<span class="channel-title-main" style="opacity:0.8; font-size:11px;">Gốc: ${escapeHtml(c.title)}</span>` : '';
+        const displayTitle = hasDisplayName ? escapeHtml(c.display_name) : escapeHtml(c.title || cid);
+        const origTitle = hasDisplayName ? `<span class="channel-title-main" style="opacity:0.75; font-size:11px;">Gốc: ${escapeHtml(c.title)}</span>` : '';
         const aliasTag = hasDisplayName ? `<span class="channel-alias-tag"><i class="fa-solid fa-tag"></i> Tên riêng</span>` : '';
 
-        const subsFormatted = formatNumber(c.subscriber_count);
+        const handleText = c.handle ? `<span style="font-size:11px; color:var(--accent-cyan); font-weight:500;">@${escapeHtml(c.handle.replace('@', ''))}</span>` : '';
+        const chUrl = c.url || (cid ? `https://www.youtube.com/channel/${cid}` : '#');
+
+        const thumbImg = c.thumbnail_url
+            ? `<img src="${c.thumbnail_url}" alt="" class="channel-avatar-clickable" onclick="openChannelDetailModal('${escapeHtml(cid)}')" style="width:38px; height:38px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;" title="Bấm xem chi tiết kênh">`
+            : `<div class="channel-avatar-clickable" onclick="openChannelDetailModal('${escapeHtml(cid)}')" style="width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; color:var(--text-muted); flex-shrink:0;" title="Bấm xem chi tiết kênh"><i class="fa-brands fa-youtube"></i></div>`;
+
+        const subsFormatted = c.subscriber_count ? formatNumber(c.subscriber_count) : '<span class="text-muted">Ẩn</span>';
         const lastUploadText = c.last_upload_date ? `${c.last_upload_date} (${c.days_since_last_upload || 0} ngày trước)` : 'Chưa có';
         const cadenceDesc = c.upload_cadence_days > 0 ? `${c.upload_cadence_days} ngày/vid` : 'Chưa xác định';
 
         const dlCount = c.downloaded_count || 0;
         const rdCount = c.rendered_count || 0;
 
-        const proxyTag = c.custom_proxy ? `<span class="badge badge-info" title="Proxy: ${escapeHtml(c.custom_proxy)}"><i class="fa-solid fa-shield-halved"></i> Proxy riêng</span>` : '';
-        const dirTag = c.download_dir ? `<span class="badge badge-secondary" title="Lưu: ${escapeHtml(c.download_dir)}"><i class="fa-solid fa-folder"></i> Custom Dir</span>` : '';
-        const configTags = [proxyTag, dirTag].filter(Boolean).join(' ') || '<span class="text-muted" style="font-size:11px;">Mặc định</span>';
-
         const isActive = c.is_active === 1;
         const statusBadge = isActive
             ? `<span class="badge badge-success"><i class="fa-solid fa-circle-dot"></i> Hoạt động</span>`
             : `<span class="badge badge-secondary"><i class="fa-solid fa-pause"></i> Tạm ngưng</span>`;
-
-        const chUrl = c.url || (`https://www.youtube.com/channel/${c.channel_id}`);
 
         const ratio = c.views_per_sub_ratio || 0;
         let ratioBadge = '';
@@ -1932,64 +2242,112 @@ function renderSavedChannelsTable() {
         }
 
         return `
-            <tr data-channel-id="${escapeHtml(c.channel_id)}">
+            <tr data-channel-id="${escapeHtml(cid)}">
+                <!-- Col 1: Kênh YouTube (Avatar + Title + Handle + Link) matching Scanner Tab -->
                 <td>
-                    <div style="display:flex; flex-direction:column; gap:2px;">
-                        ${aliasTag}
-                        <span class="channel-title-main font-semibold channel-title-link" onclick="openChannelDetailModal('${escapeHtml(c.channel_id)}')" title="Bấm xem chi tiết kênh">${displayTitle}</span>
-                        ${origTitle}
-                        <div class="channel-meta-row">
-                            <span class="channel-id-tag">${escapeHtml(c.channel_id)}</span>
-                            <button type="button" class="btn-copy-id" onclick="copyTextToClipboard('${escapeHtml(c.channel_id)}', 'Đã sao chép Channel ID!')" title="Sao chép Channel ID">
-                                <i class="fa-solid fa-copy"></i> ID
-                            </button>
-                            <a href="${escapeHtml(chUrl)}" target="_blank" rel="noopener" class="channel-link-tag" title="Mở trang YouTube của kênh này">
-                                <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở kênh
-                            </a>
+                    <div style="display:flex; align-items:flex-start; gap:10px;">
+                        ${thumbImg}
+                        <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                            ${aliasTag}
+                            <strong class="channel-title-link" onclick="openChannelDetailModal('${escapeHtml(cid)}')" title="Bấm xem chi tiết kênh: ${displayTitle}">${displayTitle}</strong>
+                            ${origTitle}
+                            ${handleText}
+                            <div style="margin-top:3px;">
+                                <a href="${escapeHtml(chUrl)}" target="_blank" rel="noopener" class="channel-link-tag" title="Mở trang YouTube của kênh này">
+                                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở kênh
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </td>
-                <td>${getCountryBadge(c.country)}</td>
+
+                <!-- Col 2: Mã Channel ID matching Scanner Tab -->
                 <td>
-                    <div style="font-weight:700; color:var(--text-primary);">${subsFormatted} sub</div>
-                    ${c.avg_views ? `<div class="sub-meta-count">${formatNumber(c.avg_views)} TB/vid</div>` : ''}
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="channel-id-tag" title="${escapeHtml(cid)}">${escapeHtml(cid)}</span>
+                        <button type="button" class="btn-copy-id" onclick="copyTextToClipboard('${escapeHtml(cid)}', 'Đã sao chép Channel ID!')" title="Sao chép Channel ID">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </td>
+
+                <!-- Col 3: Quốc Gia -->
+                <td>${getCountryBadge(c.country)}</td>
+
+                <!-- Col 4: Subscribers -->
+                <td>
+                    <div style="font-weight:700; color:var(--text-primary); font-size:13px;">${subsFormatted}</div>
                     ${ratioBadge}
                 </td>
-                <td><span style="font-size:12px;">${lastUploadText}</span></td>
+
+                <!-- Col 5: Tổng Video -->
+                <td>
+                    <div style="font-size:12.5px; color:#cbd5e1;">${c.video_count ? c.video_count.toLocaleString() : 'N/A'}</div>
+                </td>
+
+                <!-- Col 6: Lượt Xem TB -->
+                <td>
+                    <div style="font-weight:700; color:#fff; font-size:13px;">${c.avg_views ? formatNumber(c.avg_views) : '<span class="text-muted">N/A</span>'}</div>
+                </td>
+
+                <!-- Col 7: Video Mới Nhất -->
+                <td><span style="font-size:12px; color:#cbd5e1;">${lastUploadText}</span></td>
+
+                <!-- Col 8: Tần Suất Đăng -->
                 <td><span class="badge badge-purple">${cadenceDesc}</span></td>
+
+                <!-- Col 9: Video (Tải / Render) -->
                 <td>
                     <div style="display:flex; gap:4px; flex-wrap:wrap;">
                         <span class="badge badge-blue" title="Video đã tải"><i class="fa-solid fa-download"></i> ${dlCount}</span>
                         <span class="badge badge-gold" title="Video đã render AI"><i class="fa-solid fa-wand-magic-sparkles"></i> ${rdCount}</span>
                     </div>
                 </td>
-                <td>${configTags}</td>
+
+                <!-- Col 10: Trạng Thái Toggle -->
                 <td>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <label class="switch" title="${isActive ? 'Bấm để Tạm ngưng (Dừng tải và render)' : 'Bấm để Bật Hoạt động (Tự động tải và render)'}">
-                            <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleChannelStatusInline('${escapeHtml(c.channel_id)}', this)">
+                            <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleChannelStatusInline('${escapeHtml(cid)}', this)">
                             <span class="slider round"></span>
                         </label>
                         ${statusBadge}
                     </div>
                 </td>
-                <td>
-                    <div class="action-btn-group">
-                        <button class="btn btn-sm btn-primary btn-icon-only" title="Quét video mới ngay" onclick="scanSingleChannel('${escapeHtml(c.channel_id)}', this)">
-                            <i class="fa-solid fa-bolt"></i>
+
+                <!-- Col 11: Thao Tác -->
+                <td style="text-align: center;">
+                    <div class="action-dropdown-wrap">
+                        <button type="button" class="btn-more-actions" id="btn-more-saved-${escapeHtml(cid)}" 
+                            onclick="toggleActionMenu(event, 'saved-${escapeHtml(cid)}')" 
+                            title="Tùy chọn thao tác">
+                            <i class="fa-solid fa-ellipsis"></i>
                         </button>
-                        <button class="btn btn-sm btn-secondary btn-icon-only" title="Cài đặt kênh (Proxy, Tên, Thư mục...)" onclick="openChannelSettingsModal('${escapeHtml(c.channel_id)}')">
-                            <i class="fa-solid fa-gear"></i>
-                        </button>
-                        <button class="btn btn-sm btn-secondary btn-icon-only" title="Mở kênh YouTube" onclick="openChannelUrl('${escapeHtml(chUrl)}')">
-                            <i class="fa-brands fa-youtube text-danger"></i>
-                        </button>
-                        <button class="btn btn-sm btn-secondary btn-icon-only" title="Sao chép URL kênh" onclick="copyChannelUrl('${escapeHtml(chUrl)}')">
-                            <i class="fa-solid fa-copy"></i>
-                        </button>
-                        <button class="btn btn-sm btn-danger btn-icon-only" title="Bỏ lưu / Xóa kênh" onclick="unsaveChannelFromList('${escapeHtml(c.channel_id)}', this)">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
+                        <div class="action-dropdown-menu" id="action-menu-saved-${escapeHtml(cid)}">
+                            <button type="button" class="action-dropdown-item" onclick="openChannelDetailModal('${escapeHtml(cid)}')">
+                                <i class="fa-solid fa-circle-info" style="color:var(--accent-cyan);"></i> Xem chi tiết
+                            </button>
+                            <button type="button" class="action-dropdown-item" onclick="scanSingleChannel('${escapeHtml(cid)}', this)">
+                                <i class="fa-solid fa-bolt" style="color:#fe2c55;"></i> Quét video mới ngay
+                            </button>
+                            <button type="button" class="action-dropdown-item" onclick="openChannelSettingsModal('${escapeHtml(cid)}')">
+                                <i class="fa-solid fa-gear" style="color:#a855f7;"></i> Cài đặt kênh
+                            </button>
+                            <div class="dropdown-divider"></div>
+                            <a href="${escapeHtml(chUrl)}" target="_blank" rel="noopener" class="action-dropdown-item" onclick="closeAllActionMenus()">
+                                <i class="fa-brands fa-youtube" style="color:#ef4444;"></i> Mở YouTube
+                            </a>
+                            <button type="button" class="action-dropdown-item" onclick="copyChannelUrl('${escapeHtml(chUrl)}')">
+                                <i class="fa-solid fa-link" style="color:#38bdf8;"></i> Sao chép URL
+                            </button>
+                            <button type="button" class="action-dropdown-item" onclick="copyTextToClipboard('${escapeHtml(cid)}', 'Đã sao chép Channel ID!')">
+                                <i class="fa-solid fa-copy" style="color:#94a3b8;"></i> Sao chép ID
+                            </button>
+                            <div class="dropdown-divider"></div>
+                            <button type="button" class="action-dropdown-item text-danger" onclick="unsaveChannelFromList('${escapeHtml(cid)}', this)">
+                                <i class="fa-solid fa-trash text-danger"></i> Bỏ lưu / Xóa kênh
+                            </button>
+                        </div>
                     </div>
                 </td>
             </tr>
@@ -2028,6 +2386,7 @@ async function toggleChannelStatusInline(channelId, checkbox) {
 }
 
 async function scanSingleChannel(channelId, btn) {
+    closeAllActionMenus();
     const origHtml = btn ? btn.innerHTML : '';
     if (btn) {
         btn.disabled = true;
@@ -2109,6 +2468,7 @@ async function scanAllSavedChannels(btn) {
 }
 
 async function unsaveChannelFromList(channelId, btn) {
+    closeAllActionMenus();
     if (!confirm('Bạn có chắc muốn BỎ LƯU và ngừng theo dõi kênh này?')) return;
 
     const origHtml = btn ? btn.innerHTML : '';
@@ -2142,10 +2502,12 @@ async function unsaveChannelFromList(channelId, btn) {
 }
 
 function openChannelUrl(url) {
+    closeAllActionMenus();
     if (url) window.open(url, '_blank');
 }
 
 function copyChannelUrl(url) {
+    closeAllActionMenus();
     if (!url) return;
     navigator.clipboard.writeText(url).then(() => {
         showToast('Đã sao chép link kênh vào clipboard!');
@@ -2155,6 +2517,7 @@ function copyChannelUrl(url) {
 }
 
 function openChannelSettingsModal(channelId) {
+    closeAllActionMenus();
     const channel = cachedSavedChannels.find(c => c.channel_id === channelId);
     if (!channel) {
         showToast('Không tìm thấy thông tin kênh!', true);
@@ -2324,13 +2687,14 @@ async function deleteChannelFromModal(btn) {
 }
 
 // ==========================================
-// 8. AUTOMATION PIPELINE STATUS
+// 8. AUTOMATION PIPELINE, CAMPAIGNS & STUDIO
 // ==========================================
 async function loadPipelineStatus() {
     try {
         const res = await fetch('/api/pipeline/status');
         const data = await res.json();
 
+        // 1. Top Badges
         const pipeActive = document.getElementById('pipeActiveChannels');
         if (pipeActive) pipeActive.textContent = `${data.active_channels || 0} Kênh Active`;
 
@@ -2343,20 +2707,63 @@ async function loadPipelineStatus() {
         const pipeUp = document.getElementById('pipeUploadedCount');
         if (pipeUp) pipeUp.textContent = `${data.video_stats ? data.video_stats.uploaded : 0} Video Đã Đăng`;
 
+        // 2. Master Banner Controls
+        const masterLed = document.getElementById('masterSchedulerLed');
+        const masterTitle = document.getElementById('masterSchedulerTitle');
+        const masterBadge = document.getElementById('masterSchedulerBadge');
+        const masterBtn = document.getElementById('btnToggleSchedulerMaster');
         const pipeScheduler = document.getElementById('pipelineSchedulerStatus');
-        if (pipeScheduler) {
-            if (data.scheduler_running) {
+        const interval = data.scheduler_interval_minutes || 15;
+
+        const masterDesc = document.getElementById('masterSchedulerDesc');
+        if (masterDesc) {
+            masterDesc.innerHTML = `Chu kỳ quét RSS (${interval} phút) &rarr; Tự động tải MP4 &rarr; AI Render 9:16 Beta &rarr; Tự đăng lên TikTok GPM`;
+        }
+        const pipeRssMeta = document.getElementById('pipeRssIntervalMeta');
+        if (pipeRssMeta) {
+            pipeRssMeta.textContent = `Mỗi ${interval} phút qua XML YouTube`;
+        }
+
+        if (data.scheduler_running) {
+            if (masterLed) masterLed.className = 'master-pulse-icon';
+            if (masterTitle) masterTitle.textContent = 'HỆ THỐNG TỰ ĐỘNG: ĐANG HOẠT ĐỘNG';
+            if (masterBadge) {
+                masterBadge.className = 'badge badge-success';
+                masterBadge.textContent = 'Auto-Pilot Active';
+            }
+            if (masterBtn) {
+                masterBtn.className = 'btn btn-secondary has-tooltip';
+                masterBtn.innerHTML = '<i class="fa-solid fa-pause"></i> <span>Tạm Dừng</span>';
+                masterBtn.setAttribute('data-tooltip', `Tạm dừng toàn bộ quá trình tự động quét (${interval}p/lần) & đăng bài`);
+                masterBtn.removeAttribute('title');
+            }
+            if (pipeScheduler) {
                 pipeScheduler.className = 'badge badge-success';
-                pipeScheduler.innerHTML = '<i class="fa-solid fa-circle-dot"></i> Scheduler: Đang Chạy (15p/lần)';
-            } else {
+                pipeScheduler.innerHTML = `<i class="fa-solid fa-circle-dot"></i> Scheduler: Đang Chạy (${interval}p/lần)`;
+            }
+        } else {
+            if (masterLed) masterLed.className = 'master-pulse-icon paused';
+            if (masterTitle) masterTitle.textContent = 'HỆ THỐNG TỰ ĐỘNG: ĐÃ TẠM DỪNG';
+            if (masterBadge) {
+                masterBadge.className = 'badge badge-danger';
+                masterBadge.textContent = 'Auto-Pilot Paused';
+            }
+            if (masterBtn) {
+                masterBtn.className = 'btn btn-primary has-tooltip';
+                masterBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Bật Tự Động</span>';
+                masterBtn.setAttribute('data-tooltip', `Khởi động hệ thống tự động: Quét RSS ${interval}p/lần, tải, render 9:16 & đăng bài`);
+                masterBtn.removeAttribute('title');
+            }
+            if (pipeScheduler) {
                 pipeScheduler.className = 'badge badge-secondary';
                 pipeScheduler.innerHTML = '<i class="fa-solid fa-pause"></i> Scheduler: Tạm Dừng';
             }
         }
 
+        // 3. Raw Table
         const tbody = document.getElementById('pipelineTableBody');
+        const recent = data.recent_pipeline || [];
         if (tbody) {
-            const recent = data.recent_pipeline || [];
             if (!recent.length) {
                 tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">Chưa có video nào trong luồng xử lý. Hãy quét và lưu kênh để bắt đầu tải tự động!</td></tr>`;
             } else {
@@ -2380,7 +2787,7 @@ async function loadPipelineStatus() {
                             <td>${statusHtml}</td>
                             <td><span style="font-size:12px; color:var(--text-muted);">${escapeHtml(v.created_at || '')}</span></td>
                             <td>
-                                <button class="btn btn-sm btn-secondary" onclick="switchTab('tab-ai-editor')" title="Mở AI Video Editor">
+                                <button class="btn btn-sm btn-secondary" onclick="switchTab('tab-video-studio'); selectStudioVideo('${v.yt_video_id || v.id}')" title="Mở Studio xem trước & chỉnh sửa">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i>
                                 </button>
                             </td>
@@ -2389,9 +2796,798 @@ async function loadPipelineStatus() {
                 }).join('');
             }
         }
+
+        // 4. Kanban Columns
+        renderKanbanPipeline(recent, data.recent_upload_tasks || []);
     } catch (err) {
         console.error('Lỗi khi tải trạng thái pipeline:', err);
     }
+}
+
+function renderKanbanPipeline(videos, uploadTasks) {
+    const colDl = document.getElementById('kanbanColDownloaded');
+    const colRd = document.getElementById('kanbanColRendered');
+    const colSc = document.getElementById('kanbanColScheduled');
+    const colUp = document.getElementById('kanbanColUploaded');
+
+    const cntDl = document.getElementById('kanbanCountDownloaded');
+    const cntRd = document.getElementById('kanbanCountRendered');
+    const cntSc = document.getElementById('kanbanCountScheduled');
+    const cntUp = document.getElementById('kanbanCountUploaded');
+
+    const downloaded = videos.filter(v => v.status === 'downloaded');
+    const rendered = videos.filter(v => v.status === 'rendered');
+    const scheduled = uploadTasks.filter(t => t.status === 'queued' || t.status === 'processing');
+    const uploaded = uploadTasks.filter(t => t.status === 'completed');
+
+    if (cntDl) cntDl.textContent = downloaded.length;
+    if (cntRd) cntRd.textContent = rendered.length;
+    if (cntSc) cntSc.textContent = scheduled.length;
+    if (cntUp) cntUp.textContent = uploaded.length;
+
+    const renderCard = (v, actionType) => `
+        <div class="kanban-task-card">
+            <strong style="font-size:12px; color:#fff; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${escapeHtml(v.title || 'Video #' + v.id)}</strong>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-muted);">
+                <span><i class="fa-solid fa-clock"></i> ${v.duration || 65}s</span>
+                <span class="badge badge-cyan" style="font-size:10px;">${escapeHtml(v.channel_name || 'Kênh')}</span>
+            </div>
+            <div style="display:flex; gap:6px; margin-top:4px;">
+                ${actionType === 'render' ? `
+                    <button class="btn btn-sm btn-primary" onclick="switchTab('tab-video-studio'); selectStudioVideo('${v.yt_video_id || v.id}')" style="width:100%; font-size:11px; padding:4px;">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Render 9:16
+                    </button>
+                ` : ''}
+                ${actionType === 'upload' ? `
+                    <button class="btn btn-sm btn-secondary" onclick="switchTab('tab-video-studio'); selectStudioVideo('${v.yt_video_id || v.id}')" style="flex:1; font-size:11px; padding:4px;">
+                        <i class="fa-solid fa-eye"></i> Xem Thử
+                    </button>
+                    <button class="btn btn-sm btn-primary" onclick="openUploadModal('${v.id}')" style="flex:1; font-size:11px; padding:4px;">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Đăng GPM
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+
+    if (colDl) {
+        colDl.innerHTML = downloaded.length ? downloaded.map(v => renderCard(v, 'render')).join('') : '<div class="text-center py-4 text-muted" style="font-size:11px;">Không có video chờ render</div>';
+    }
+    if (colRd) {
+        colRd.innerHTML = rendered.length ? rendered.map(v => renderCard(v, 'upload')).join('') : '<div class="text-center py-4 text-muted" style="font-size:11px;">Không có video sẵn sàng</div>';
+    }
+    if (colSc) {
+        colSc.innerHTML = scheduled.length ? scheduled.map(t => `
+            <div class="kanban-task-card">
+                <strong style="font-size:12px; color:#fff;">${escapeHtml(t.title || 'Task #' + t.id)}</strong>
+                <div style="font-size:11px; color:var(--accent-gold);">
+                    <i class="fa-solid fa-robot"></i> ${escapeHtml(t.gpm_profile_name || 'GPM Profile')}
+                </div>
+                <div style="font-size:10px; color:var(--text-muted);">
+                    Hẹn giờ: ${escapeHtml(t.scheduled_time || 'Đang chờ')}
+                </div>
+            </div>
+        `).join('') : '<div class="text-center py-4 text-muted" style="font-size:11px;">Không có video lên lịch</div>';
+    }
+    if (colUp) {
+        colUp.innerHTML = uploaded.length ? uploaded.map(t => `
+            <div class="kanban-task-card">
+                <strong style="font-size:12px; color:#fff;">${escapeHtml(t.title || 'Task #' + t.id)}</strong>
+                <div style="font-size:11px; color:var(--accent-green);">
+                    <i class="fa-brands fa-tiktok"></i> ${escapeHtml(t.gpm_profile_name || 'GPM')}
+                </div>
+                <div style="font-size:10px; color:var(--text-muted);">${escapeHtml(t.uploaded_at || 'Đã hoàn tất')}</div>
+            </div>
+        `).join('') : '<div class="text-center py-4 text-muted" style="font-size:11px;">Chưa có bài đăng</div>';
+    }
+}
+
+// Master Scheduler Toggle
+async function toggleMasterScheduler(btn) {
+    if (btn) btn.disabled = true;
+    try {
+        const res = await fetch('/api/pipeline/toggle-scheduler', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success' || data.scheduler_running !== undefined) {
+            const isRun = data.running !== undefined ? data.running : data.scheduler_running;
+            showToast(isRun ? 'Đã khởi động Scheduler tự động!' : 'Đã tạm dừng Scheduler tự động.');
+            loadPipelineStatus();
+        } else {
+            showToast('Lỗi thay đổi trạng thái scheduler', true);
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối: ' + err.message, true);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// Scan All Channels
+async function scanAllChannelsPipeline(btn) {
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang Quét...';
+    }
+    showToast('Đang quét RSS feed toàn bộ kênh đã lưu...');
+    try {
+        const res = await fetch('/api/pipeline/scan-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast(`Quét hoàn tất: Tìm thấy và tải ${data.new_videos} video mới!`);
+            loadPipelineStatus();
+            loadVideos();
+            loadDashboardStats();
+        } else {
+            showToast('Lỗi khi quét kênh: ' + (data.message || 'Thất bại'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối: ' + err.message, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
+
+// ==========================================
+// 9. AUTO CAMPAIGNS HUB (CHIẾN DỊCH TỰ ĐỘNG)
+// ==========================================
+async function loadCampaigns() {
+    const grid = document.getElementById('campaignsFlowGrid');
+    if (!grid) return;
+    try {
+        const res = await fetch('/api/campaigns');
+        const campaigns = await res.json();
+        cachedCampaigns = campaigns;
+
+        const stepperCamp = document.getElementById('stepperCampaignStats');
+        if (stepperCamp) {
+            const activeCount = campaigns.filter(c => c.is_active === 1).length;
+            stepperCamp.textContent = `${activeCount} chiến dịch đang chạy`;
+        }
+
+        if (!campaigns.length) {
+            grid.innerHTML = `
+                <div class="card-empty-state">
+                    <i class="fa-solid fa-robot"></i>
+                    <h4>Chưa có chiến dịch tự động nào</h4>
+                    <p>Hãy tạo chiến dịch đầu tiên để kết nối Kênh YouTube nguồn với công thức Edit và Nick TikTok nhận video.</p>
+                    <button class="btn btn-primary mt-3" onclick="openNewCampaignModal()">
+                        <i class="fa-solid fa-plus"></i> Tạo Chiến Dịch Tự Động Đầu Tiên
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = campaigns.map(c => {
+            const chCount = c.channel_count || (c.channel_ids_list ? c.channel_ids_list.length : 1);
+            const gpmCount = c.gpm_count || (c.gpm_profile_ids_list ? c.gpm_profile_ids_list.length : 1);
+            const chTitle = chCount > 1 ? `${chCount} Kênh YouTube Nguồn` : (c.channel_name || 'Kênh nguồn');
+            const gpmTitle = gpmCount > 1 ? `${gpmCount} Dàn Nick TikTok` : (c.gpm_profile_name ? '@' + (c.tiktok_username || c.gpm_profile_name) : 'Nick GPM');
+
+            const distBadge = c.distribution_mode === 'round_robin' 
+                ? '<span class="badge badge-cyan" title="Chống trùng: chia vòng tròn clip"><i class="fa-solid fa-arrows-spin"></i> Round-Robin (Không trùng)</span>'
+                : (c.distribution_mode === 'equal_random' 
+                    ? '<span class="badge badge-purple"><i class="fa-solid fa-shuffle"></i> Ngẫu Nhiên</span>' 
+                    : '<span class="badge badge-gold"><i class="fa-solid fa-bullhorn"></i> Đăng Toàn Bộ</span>');
+
+            let freqBadge = '';
+            let freqText = 'Mỗi ngày';
+            if (c.post_frequency === 'every_2_days') {
+                freqBadge = '<span class="badge badge-purple" title="Đăng cách 2 ngày 1 lần"><i class="fa-solid fa-calendar-days"></i> Cách 2 ngày</span>';
+                freqText = 'Cách 2 ngày/lần';
+            } else if (c.post_frequency === 'every_3_days') {
+                freqBadge = '<span class="badge badge-purple" title="Đăng cách 3 ngày 1 lần"><i class="fa-solid fa-calendar-days"></i> Cách 3 ngày</span>';
+                freqText = 'Cách 3 ngày/lần';
+            } else if (c.post_frequency === 'specific_days') {
+                const daysMap = { 'mon': 'T2', 'tue': 'T3', 'wed': 'T4', 'thu': 'T5', 'fri': 'T6', 'sat': 'T7', 'sun': 'CN' };
+                const daysStr = (c.post_days_of_week || '').split(',').map(d => daysMap[d.trim()] || d).join(', ');
+                freqBadge = `<span class="badge badge-cyan" title="Các ngày: ${daysStr}"><i class="fa-solid fa-calendar-check"></i> ${daysStr}</span>`;
+                freqText = daysStr;
+            } else if (c.post_frequency === 'custom_interval') {
+                freqBadge = `<span class="badge badge-purple" title="Khoảng cách: ${c.post_interval_days} ngày"><i class="fa-solid fa-hourglass-half"></i> Cách ${c.post_interval_days} ngày</span>`;
+                freqText = `Cách ${c.post_interval_days} ngày`;
+            } else {
+                freqBadge = '<span class="badge badge-blue"><i class="fa-solid fa-calendar-days"></i> Mỗi ngày</span>';
+            }
+
+            const warmupBadge = c.warmup_mode ? '<span class="badge badge-gold" title="Chế độ warm-up nuôi nick mới"><i class="fa-solid fa-fire"></i> Warm-up</span>' : '';
+
+            const subBadge = c.subtitle_enabled 
+                ? `<span class="badge badge-gold" title="Phong cách: ${escapeHtml(c.subtitle_style || '')}"><i class="fa-solid fa-closed-captioning"></i> Phụ Đề AI Karaoke</span>`
+                : '<span class="badge badge-secondary">Không phụ đề</span>';
+
+            const dlDir = c.download_dir || 'data/downloads';
+            const rdDir = c.render_dir || 'data/rendered';
+
+            return `
+            <div class="campaign-card ${c.is_active ? '' : 'campaign-paused'}">
+                <div class="campaign-header-row">
+                    <div class="campaign-header-left">
+                        <span class="badge ${c.is_active ? 'badge-success' : 'badge-secondary'}">
+                            <i class="fa-solid fa-circle-dot"></i> ${c.is_active ? 'Đang Chạy Auto' : 'Tạm Dừng'}
+                        </span>
+                        <h4 style="margin:0; font-size:15px; color:#fff;">${escapeHtml(c.name)}</h4>
+                        ${distBadge}
+                        ${freqBadge}
+                        ${warmupBadge}
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-sm ${c.is_active ? 'btn-secondary' : 'btn-success'} has-tooltip" onclick="toggleCampaign(${c.id})" data-tooltip="${c.is_active ? 'Tạm dừng quy trình tự động của chiến dịch này' : 'Bật chạy lại chiến dịch này'}">
+                            <i class="fa-solid ${c.is_active ? 'fa-pause' : 'fa-play'}"></i> ${c.is_active ? 'Tạm Dừng' : 'Kích Hoạt'}
+                        </button>
+                        <button class="btn btn-sm btn-danger has-tooltip tooltip-left" onclick="deleteCampaign(${c.id})" data-tooltip="Xóa vĩnh viễn chiến dịch này">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="campaign-pipeline-flow">
+                    <!-- Node 1: Multi-Channels Source -->
+                    <div class="pipeline-node">
+                        <div class="node-icon bg-blue"><i class="fa-brands fa-youtube" style="color:#ff0000;"></i></div>
+                        <div class="node-text">
+                            <h5>${escapeHtml(chTitle)}</h5>
+                            <p>${chCount > 1 ? `Nhóm ${chCount} kênh lấy video tự động` : 'Quét RSS mỗi 15 phút'}</p>
+                            <span class="pipeline-dir-tag" title="Thư mục tải MP4 gốc"><i class="fa-regular fa-folder"></i> ${escapeHtml(dlDir)}</span>
+                        </div>
+                    </div>
+
+                    <div class="flow-step-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+
+                    <!-- Node 2: Edit Recipe, Folders & Subtitles -->
+                    <div class="pipeline-node">
+                        <div class="node-icon bg-purple"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                        <div class="node-text">
+                            <h5>${escapeHtml(c.aspect_ratio === '9:16_blur' ? '9:16 Nền Mờ' : (c.preset_name || 'Chuẩn Beta 9:16'))}</h5>
+                            <p>${c.video_duration || 65}s Beta • Speed x${c.speed_factor} • ${c.flip_horizontal ? 'Lật hình' : 'Gốc'}</p>
+                            <div style="margin-top:3px;">${subBadge}</div>
+                            <span class="pipeline-dir-tag" title="Thư mục lưu video 9:16"><i class="fa-solid fa-folder-open"></i> ${escapeHtml(rdDir)}</span>
+                        </div>
+                    </div>
+
+                    <div class="flow-step-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+
+                    <!-- Node 3: Target Multi-Profiles & Schedule -->
+                    <div class="pipeline-node">
+                        <div class="node-icon bg-gold"><i class="fa-brands fa-tiktok"></i></div>
+                        <div class="node-text">
+                            <h5>${escapeHtml(gpmTitle)}</h5>
+                            <p>${freqText} • ${c.daily_limit} video/ngày</p>
+                            <span class="pipeline-dir-tag" style="color:var(--accent-gold);"><i class="fa-regular fa-clock"></i> Khung: ${escapeHtml(c.post_schedule || '11:30, 18:00, 20:30')}${c.random_delay_minutes ? ' (&plusmn;' + c.random_delay_minutes + 'p)' : ''}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="campaign-footer-row">
+                    <span><i class="fa-regular fa-calendar"></i> Tạo lúc: ${escapeHtml(c.created_at || '')}</span>
+                    <span style="color:var(--accent-cyan);"><i class="fa-solid fa-bolt"></i> Phân phối: ${chCount} kênh &rarr; ${gpmCount} nick GPM (${c.distribution_mode === 'round_robin' ? 'Xoay vòng không trùng clip' : 'Chia đều'})</span>
+                </div>
+            </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error('Lỗi nạp chiến dịch:', err);
+    }
+}
+
+// Global cached lists for modal
+let modalAllSavedChannels = [];
+let modalAllGpmProfiles = [];
+
+async function openNewCampaignModal() {
+    const modal = document.getElementById('newCampaignModal');
+    if (!modal) return;
+
+    // Reset inputs
+    const nameInput = document.getElementById('campaignNameInput');
+    if (nameInput) nameInput.value = '';
+
+    const chListEl = document.getElementById('campaignChannelsList');
+    const gpmListEl = document.getElementById('campaignGpmList');
+
+    if (chListEl) chListEl.innerHTML = '<div class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Đang nạp danh sách kênh...</div>';
+    if (gpmListEl) gpmListEl.innerHTML = '<div class="text-muted text-center py-2"><i class="fa-solid fa-spinner fa-spin"></i> Đang nạp profile GPMLogin...</div>';
+
+    modal.classList.add('show');
+
+    // 1. Fetch Saved Channels
+    try {
+        const res = await fetch('/api/youtube/channels');
+        modalAllSavedChannels = await res.json();
+        renderCampaignChannelsCheckboxes(modalAllSavedChannels);
+    } catch (e) {
+        if (chListEl) chListEl.innerHTML = '<div class="text-danger text-center py-2">Lỗi nạp danh sách kênh YouTube</div>';
+    }
+
+    // 2. Fetch GPM Profiles
+    try {
+        const res = await fetch('/api/gpm/profiles');
+        modalAllGpmProfiles = await res.json();
+        renderCampaignGpmCheckboxes(modalAllGpmProfiles);
+    } catch (e) {
+        if (gpmListEl) gpmListEl.innerHTML = '<div class="text-danger text-center py-2">Lỗi nạp danh sách profile GPMLogin</div>';
+    }
+
+    // 3. Restore persisted folder defaults from SQLite settings
+    try {
+        const defRes = await fetch('/api/settings/defaults');
+        const defData = await defRes.json();
+        const dlInput = document.getElementById('campaignDownloadDir');
+        const rdInput = document.getElementById('campaignRenderDir');
+        if (dlInput && defData.download_dir) dlInput.value = defData.download_dir;
+        if (rdInput && defData.render_dir) rdInput.value = defData.render_dir;
+    } catch (_) {}
+}
+
+function renderCampaignChannelsCheckboxes(channels) {
+    const chListEl = document.getElementById('campaignChannelsList');
+    if (!chListEl) return;
+
+    if (!channels.length) {
+        chListEl.innerHTML = `
+            <div class="text-muted text-center py-3" style="font-size:12px;">
+                Chưa có kênh nào được lưu. Hãy qua tab <strong>"1. Nguồn YouTube"</strong> để quét và lưu kênh trước!
+            </div>
+        `;
+        updateSelectedChannelsCount();
+        return;
+    }
+
+    chListEl.innerHTML = channels.map((ch, idx) => `
+        <label class="multi-select-item" style="display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:4px; cursor:pointer; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,0.03);">
+            <input type="checkbox" class="campaign-ch-check" value="${escapeHtml(ch.channel_id)}" ${idx < 3 ? 'checked' : ''} onchange="updateSelectedChannelsCount()">
+            <i class="fa-brands fa-youtube" style="color:#ff0000; font-size:14px;"></i>
+            <span style="font-weight:600; color:#fff; flex:1;">${escapeHtml(ch.display_name || ch.title)}</span>
+            <span style="font-size:11px; color:var(--accent-cyan);">${formatNumber(ch.subscriber_count || 0)} subs</span>
+            <span class="badge badge-secondary" style="font-size:10px;">${escapeHtml(ch.country || 'US')}</span>
+        </label>
+    `).join('');
+
+    updateSelectedChannelsCount();
+}
+
+function renderCampaignGpmCheckboxes(profiles) {
+    const gpmListEl = document.getElementById('campaignGpmList');
+    if (!gpmListEl) return;
+
+    if (!profiles.length) {
+        gpmListEl.innerHTML = `
+            <div class="text-muted text-center py-3" style="font-size:12px;">
+                Chưa có profile GPMLogin nào. Hãy bấm <strong>"Đồng Bộ GPM"</strong> ở tab "Dàn Nick TikTok"!
+            </div>
+        `;
+        updateSelectedGpmCount();
+        return;
+    }
+
+    gpmListEl.innerHTML = profiles.map((p, idx) => `
+        <label class="multi-select-item" style="display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:4px; cursor:pointer; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,0.03);">
+            <input type="checkbox" class="campaign-gpm-check" value="${p.id}" ${idx < 3 ? 'checked' : ''} onchange="updateSelectedGpmCount()">
+            <i class="fa-solid fa-robot" style="color:var(--accent-gold); font-size:14px;"></i>
+            <span style="font-weight:600; color:#fff; flex:1;">${escapeHtml(p.name)}</span>
+            <span style="font-size:11px; color:var(--accent-gold);">@${escapeHtml(p.tiktok_username || 'Chưa gắn')}</span>
+            <span class="badge ${p.eligible_10k ? 'badge-success' : 'badge-secondary'}" style="font-size:10px;">${(p.followers_count || 0).toLocaleString()} flw</span>
+        </label>
+    `).join('');
+
+    updateSelectedGpmCount();
+}
+
+function updateSelectedChannelsCount() {
+    const checked = document.querySelectorAll('.campaign-ch-check:checked');
+    const badge = document.getElementById('campaignSelectedChannelsCount');
+    if (badge) badge.textContent = `Đã chọn: ${checked.length} kênh`;
+}
+
+function updateSelectedGpmCount() {
+    const checked = document.querySelectorAll('.campaign-gpm-check:checked');
+    const badge = document.getElementById('campaignSelectedGpmCount');
+    if (badge) badge.textContent = `Đã chọn: ${checked.length} nick`;
+}
+
+function selectAllCampaignChannels(select) {
+    const boxes = document.querySelectorAll('.campaign-ch-check');
+    boxes.forEach(b => {
+        if (b.closest('label').style.display !== 'none') {
+            b.checked = select;
+        }
+    });
+    updateSelectedChannelsCount();
+}
+
+function selectAllCampaignGpm(select) {
+    const boxes = document.querySelectorAll('.campaign-gpm-check');
+    boxes.forEach(b => {
+        if (b.closest('label').style.display !== 'none') {
+            b.checked = select;
+        }
+    });
+    updateSelectedGpmCount();
+}
+
+function filterCampaignChannelList(query) {
+    const q = (query || '').toLowerCase().trim();
+    const items = document.querySelectorAll('#campaignChannelsList .multi-select-item');
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(q) ? 'flex' : 'none';
+    });
+}
+
+function filterCampaignGpmList(query) {
+    const q = (query || '').toLowerCase().trim();
+    const items = document.querySelectorAll('#campaignGpmList .multi-select-item');
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(q) ? 'flex' : 'none';
+    });
+}
+
+function onCampaignFrequencyChange(val) {
+    const customWrap = document.getElementById('campaignCustomIntervalWrap');
+    const daysWrap = document.getElementById('campaignDaysOfWeekWrap');
+    if (customWrap) customWrap.style.display = val === 'custom_interval' ? 'block' : 'none';
+    if (daysWrap) daysWrap.style.display = val === 'specific_days' ? 'block' : 'none';
+}
+
+function setCampaignSchedulePreset(val) {
+    const inp = document.getElementById('campaignScheduleInput');
+    if (inp) inp.value = val;
+}
+
+async function browseFolderForInput(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    showToast('Đang mở hộp thoại chọn thư mục Windows...');
+    try {
+        const res = await fetch('/api/utils/browse-folder', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success' && data.path) {
+            input.value = data.path;
+            showToast(`Đã chọn: ${data.path}`);
+        } else if (data.status === 'cancelled') {
+            // User cancelled folder picker
+        } else if (data.status === 'error') {
+            showToast('Lỗi mở hộp thoại chọn thư mục: ' + (data.message || 'Không rõ'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối máy chủ: ' + err.message, true);
+    }
+}
+
+function closeNewCampaignModal() {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+    }
+    const modal = document.getElementById('newCampaignModal');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.classList.remove('active');
+    }
+}
+
+async function handleCreateCampaignSubmit(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnSubmitCampaign');
+
+    // 1. Gather Selected Channels
+    const chBoxes = document.querySelectorAll('.campaign-ch-check:checked');
+    const selectedChannelIds = Array.from(chBoxes).map(b => b.value);
+    if (selectedChannelIds.length === 0) {
+        showToast('⚠️ Vui lòng chọn ít nhất 1 kênh YouTube nguồn (hoặc chọn nhiều kênh 1, 2, 3...)!', true);
+        return;
+    }
+
+    // 2. Gather Selected GPM Profiles
+    const gpmBoxes = document.querySelectorAll('.campaign-gpm-check:checked');
+    const selectedGpmIds = Array.from(gpmBoxes).map(b => parseInt(b.value, 10)).filter(id => !isNaN(id));
+    if (selectedGpmIds.length === 0) {
+        showToast('⚠️ Vui lòng chọn ít nhất 1 Profile GPMLogin nhận video (hoặc chọn nhóm nick a, b, c...)!', true);
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang Kích Hoạt...';
+    }
+
+    // Gather frequency & advanced options
+    const freq = document.getElementById('campaignFrequencySelect')?.value || 'daily';
+    let intervalDays = 1;
+    if (freq === 'every_2_days') intervalDays = 2;
+    else if (freq === 'every_3_days') intervalDays = 3;
+    else if (freq === 'custom_interval') {
+        intervalDays = parseInt(document.getElementById('campaignCustomIntervalInput')?.value, 10) || 2;
+    }
+
+    const dowBoxes = document.querySelectorAll('.campaign-dow-check:checked');
+    const daysOfWeek = Array.from(dowBoxes).map(b => b.value).join(',');
+    const randomDelay = parseInt(document.getElementById('campaignRandomDelaySelect')?.value, 10) || 10;
+    const warmup = document.getElementById('campaignWarmupSwitch')?.checked ? 1 : 0;
+
+    const payload = {
+        name: document.getElementById('campaignNameInput').value.trim() || `Chiến Dịch Auto ${selectedChannelIds.length} Kênh -> ${selectedGpmIds.length} Nick`,
+        channel_id: selectedChannelIds[0],
+        channel_ids: selectedChannelIds,
+        gpm_profile_id: selectedGpmIds[0],
+        gpm_profile_ids: selectedGpmIds,
+        distribution_mode: document.getElementById('campaignDistributionMode')?.value || 'round_robin',
+        download_dir: document.getElementById('campaignDownloadDir')?.value.trim() || 'data/downloads',
+        render_dir: document.getElementById('campaignRenderDir')?.value.trim() || 'data/rendered',
+        aspect_ratio: document.getElementById('campaignAspectRatio')?.value || '9:16_blur',
+        preset_name: document.getElementById('campaignAspectRatio')?.value === '9:16_blur' ? 'TikTok Beta Chuẩn 9:16 (Nền Mờ)' : 'TikTok Chuẩn 9:16',
+        video_duration: parseInt(document.getElementById('campaignVideoDuration')?.value, 10) || 65,
+        subtitle_enabled: document.getElementById('campaignSubtitleSwitch')?.checked ? 1 : 0,
+        subtitle_style: document.getElementById('campaignSubtitleStyle')?.value || 'karaoke_yellow',
+        speed_factor: document.getElementById('campaignSpeedSwitch')?.checked ? 1.03 : 1.0,
+        flip_horizontal: document.getElementById('campaignFlipSwitch')?.checked ? 1 : 0,
+        daily_limit: parseInt(document.getElementById('campaignDailyLimitInput')?.value, 10) || 3,
+        post_schedule: document.getElementById('campaignScheduleInput')?.value.trim() || '11:30, 18:00, 20:30',
+        post_frequency: freq,
+        post_interval_days: intervalDays,
+        post_days_of_week: daysOfWeek || 'mon,tue,wed,thu,fri,sat,sun',
+        random_delay_minutes: randomDelay,
+        warmup_mode: warmup,
+        is_active: 1
+    };
+
+    try {
+        const res = await fetch('/api/campaigns', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast(`✅ Đã tạo chiến dịch tự động thành công! (${selectedChannelIds.length} kênh &rarr; ${selectedGpmIds.length} nick TikTok)`);
+            closeNewCampaignModal();
+            loadCampaigns();
+            loadPipelineStatus();
+        } else {
+            showToast('Lỗi: ' + (data.detail || 'Không thể tạo chiến dịch'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối: ' + err.message, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-rocket"></i> Kích Hoạt Chiến Dịch Tự Động';
+        }
+    }
+}
+
+async function toggleCampaign(id) {
+    try {
+        const res = await fetch(`/api/campaigns/${id}/toggle`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast(data.is_active ? '✅ Đã kích hoạt chiến dịch!' : '⏸️ Đã tạm dừng chiến dịch.');
+            loadCampaigns();
+        }
+    } catch (err) {
+        showToast('Lỗi: ' + err.message, true);
+    }
+}
+
+async function deleteCampaign(id) {
+    if (!confirm('Bạn có chắc chắn muốn xóa chiến dịch tự động này?')) return;
+    try {
+        const res = await fetch(`/api/campaigns/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast('Đã xóa chiến dịch thành công!');
+            loadCampaigns();
+        }
+
+    } catch (err) {
+        showToast('Lỗi: ' + err.message, true);
+    }
+}
+
+// ==========================================
+// 10. VIDEO STUDIO & RECIPE LOGIC
+// ==========================================
+async function loadStudioVideos() {
+    const listEl = document.getElementById('studioVideoList');
+    const badge = document.getElementById('studioVideoCountBadge');
+    try {
+        const res = await fetch('/api/video/list');
+        const videos = await res.json();
+        cachedVideos = videos;
+        if (badge) badge.textContent = `${videos.length} Video`;
+
+        renderStudioVideoList();
+
+        // If no active video selected, pick the first video
+        if (!activeStudioVideo && videos.length > 0) {
+            selectStudioVideo(videos[0].yt_video_id || videos[0].id);
+        }
+    } catch (err) {
+        console.error('Lỗi nạp video studio:', err);
+    }
+}
+
+function filterStudioVideos(filter) {
+    currentStudioFilter = filter;
+    document.getElementById('btnFilterAllVideos')?.classList.toggle('active', filter === 'all');
+    document.getElementById('btnFilterOriginalVideos')?.classList.toggle('active', filter === 'original');
+    document.getElementById('btnFilterRenderedVideos')?.classList.toggle('active', filter === 'rendered');
+    renderStudioVideoList();
+}
+
+function renderStudioVideoList() {
+    const listEl = document.getElementById('studioVideoList');
+    if (!listEl) return;
+
+    let filtered = cachedVideos;
+    if (currentStudioFilter === 'original') {
+        filtered = cachedVideos.filter(v => v.status !== 'rendered');
+    } else if (currentStudioFilter === 'rendered') {
+        filtered = cachedVideos.filter(v => v.status === 'rendered');
+    }
+
+    if (!filtered.length) {
+        listEl.innerHTML = `<div class="text-center py-4 text-muted" style="font-size:12px;">Không có video phù hợp. Dán link phía trên để tải ngay!</div>`;
+        return;
+    }
+
+    listEl.innerHTML = filtered.map(v => {
+        const isSelected = activeStudioVideo && (activeStudioVideo.id === v.id || activeStudioVideo.yt_video_id === v.yt_video_id);
+        const isRendered = v.status === 'rendered';
+
+        return `
+            <div class="studio-video-card ${isSelected ? 'selected' : ''}" onclick="selectStudioVideo('${v.yt_video_id || v.id}')">
+                <div class="svc-title">${escapeHtml(v.title || 'Video #' + v.id)}</div>
+                <div class="svc-meta">
+                    <span><i class="fa-solid fa-clock"></i> ${v.duration || 65}s</span>
+                    ${isRendered 
+                        ? '<span class="badge badge-success" style="font-size:10px;"><i class="fa-solid fa-check"></i> Đã Có 9:16</span>'
+                        : '<span class="badge badge-warning" style="font-size:10px;">Gốc</span>'}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectStudioVideo(videoId) {
+    const v = cachedVideos.find(item => item.id == videoId || item.yt_video_id === videoId);
+    if (!v) return;
+    activeStudioVideo = v;
+
+    renderStudioVideoList();
+
+    // Update active video info bar
+    const titleEl = document.getElementById('studioActiveVideoTitle');
+    const metaEl = document.getElementById('studioActiveVideoMeta');
+    const hiddenId = document.getElementById('studioActiveYtVideoId');
+
+    if (titleEl) titleEl.textContent = v.title || `Video #${v.id}`;
+    if (metaEl) metaEl.textContent = `Thời lượng: ${v.duration || 65}s • Kênh: ${v.channel_name || 'Ngoại'} • Trạng thái: ${v.status}`;
+    if (hiddenId) hiddenId.value = v.yt_video_id || v.id;
+
+    // Update Phone Mockup Overlay
+    const captionEl = document.getElementById('ttOverlayCaption');
+    const partBadge = document.getElementById('ttOverlayPartBadge');
+    if (captionEl) {
+        captionEl.textContent = (v.ai_title || v.title || 'Video ngắn viral TikTok Beta') + ' ' + (v.ai_tags || '#fyp #xuhuong');
+    }
+    if (partBadge) {
+        partBadge.textContent = v.status === 'rendered' ? 'PART 1 (9:16)' : 'VIDEO GỐC';
+    }
+
+    // Update Video Player Source
+    const player = document.getElementById('studioVideoPlayer');
+    const source = document.getElementById('studioVideoSource');
+    if (player && source) {
+        if (v.media_url) {
+            source.src = v.media_url;
+            player.load();
+        } else {
+            source.src = '';
+        }
+    }
+}
+
+function applyStudioPreset(preset) {
+    const ratio = document.getElementById('studioAspectRatio');
+    const durationRange = document.getElementById('studioDurationRange');
+    const durationVal = document.getElementById('studioDurationVal');
+    const flip = document.getElementById('studioFlipHorizontal');
+    const speed = document.getElementById('studioSpeedFactor');
+    const part = document.getElementById('studioAddPartLabel');
+    const hook = document.getElementById('studioGenerateAiHook');
+
+    if (preset === 'beta-standard') {
+        if (ratio) ratio.value = '9:16_blur';
+        if (durationRange) durationRange.value = 65;
+        if (durationVal) durationVal.textContent = '65s';
+        if (flip) flip.checked = true;
+        if (speed) speed.checked = true;
+        if (part) part.checked = true;
+        if (hook) hook.checked = true;
+    } else if (preset === 'shorts-fast') {
+        if (ratio) ratio.value = '9:16_crop';
+        if (durationRange) durationRange.value = 45;
+        if (durationVal) durationVal.textContent = '45s';
+        if (flip) flip.checked = true;
+        if (speed) speed.checked = true;
+        if (part) part.checked = false;
+        if (hook) hook.checked = true;
+    }
+}
+
+function toggleStudioPlayback() {
+    const player = document.getElementById('studioVideoPlayer');
+    const btn = document.getElementById('btnStudioPlayToggle');
+    if (!player) return;
+    if (player.paused) {
+        player.play().catch(e => console.warn('Autoplay prevented:', e));
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-pause"></i> Dừng Video';
+    } else {
+        player.pause();
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-play"></i> Phát Video';
+    }
+}
+
+async function renderStudioActiveVideo(btn) {
+    if (!activeStudioVideo) {
+        showToast('Vui lòng chọn 1 video từ danh sách bên trái trước!', true);
+        return;
+    }
+
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang Render AI 9:16...';
+    }
+
+    const duration = parseInt(document.getElementById('studioDurationRange')?.value) || 65;
+    const flip = document.getElementById('studioFlipHorizontal')?.checked ?? true;
+    const speed = document.getElementById('studioSpeedFactor')?.checked ? 1.03 : 1.0;
+
+    showToast(`Bắt đầu render video 9:16 (Part 65s, speed ${speed}x)...`);
+
+    try {
+        const res = await fetch('/api/video/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                video_id: activeStudioVideo.yt_video_id,
+                duration: duration,
+                flip_horizontal: flip,
+                speed_factor: speed
+            })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast('Render AI 9:16 thành công! Bạn có thể xem thử trên mô phỏng điện thoại.');
+            await loadStudioVideos();
+            selectStudioVideo(activeStudioVideo.yt_video_id);
+            loadDashboardStats();
+            loadPipelineStatus();
+        } else {
+            showToast('Lỗi render: ' + (data.detail || 'Không xác định'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi render: ' + err.message, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
+
+function openUploadModalForActiveStudioVideo() {
+    if (!activeStudioVideo) {
+        showToast('Vui lòng chọn video trước!', true);
+        return;
+    }
+    openUploadModal(activeStudioVideo.id);
 }
 
 async function triggerManualPipelineScan(btn) {
@@ -2499,9 +3695,11 @@ async function saveApiKeySettings(btn) {
         });
         const data = await res.json();
         if (res.ok && data.status === 'ok') {
-            if (resultEl) resultEl.innerHTML = `<span style="color:#34d399;"><i class="fa-solid fa-circle-check"></i> Đã lưu! Pool: ${data.pool_size} key</span>`;
-            showToast(`✅ Đã lưu cấu hình! ${data.pool_size} YouTube API Key trong pool.`, 'success');
+            await saveSchedulerSettings(null, false);
+            if (resultEl) resultEl.innerHTML = `<span style="color:#34d399;"><i class="fa-solid fa-circle-check"></i> Đã lưu toàn bộ cài đặt! Pool: ${data.pool_size} key</span>`;
+            showToast(`✅ Đã lưu cấu hình & cài đặt tự động quét thành công!`, 'success');
             await loadApiKeySettings(); // refresh pool status
+            loadPipelineStatus();
         } else {
             if (resultEl) resultEl.innerHTML = `<span style="color:#f87171;"><i class="fa-solid fa-circle-xmark"></i> ${escapeHtml(data.message || 'Lỗi không xác định')}</span>`;
         }
@@ -2543,5 +3741,170 @@ async function testYoutubeKey(btn) {
     } finally {
         btn.disabled = false;
         btn.innerHTML = original;
+    }
+}
+
+// ============================================================
+// ADVANCED SCHEDULER & AUTO-SCAN SETTINGS
+// ============================================================
+function openSchedulerSettingsModal() {
+    loadSchedulerSettings();
+    const modal = document.getElementById('schedulerSettingsModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.add('active');
+    }
+}
+
+function closeSchedulerSettingsModal() {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+    }
+    const modal = document.getElementById('schedulerSettingsModal');
+    if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('active');
+    }
+}
+
+// Backdrop click close for schedulerSettingsModal
+document.addEventListener('DOMContentLoaded', () => {
+    const schedModal = document.getElementById('schedulerSettingsModal');
+    if (schedModal) {
+        schedModal.addEventListener('click', (e) => {
+            if (e.target === schedModal) {
+                closeSchedulerSettingsModal();
+            }
+        });
+    }
+});
+
+function updateModalIntervalBadge(val) {
+    const badge = document.getElementById('modalIntervalBadge');
+    if (badge) {
+        const num = parseInt(val) || 15;
+        badge.textContent = `${num} phút/lần`;
+    }
+}
+
+function setSchedulerPreset(minutes, isModal) {
+    if (isModal) {
+        const inp = document.getElementById('modalSchedulerInterval');
+        if (inp) {
+            inp.value = minutes;
+            updateModalIntervalBadge(minutes);
+        }
+    } else {
+        const inp = document.getElementById('settingSchedulerInterval');
+        if (inp) inp.value = minutes;
+    }
+}
+
+async function loadSchedulerSettings() {
+    try {
+        const res = await fetch('/api/settings/scheduler');
+        if (!res.ok) return;
+        const data = await res.json();
+        const interval = data.interval_minutes || 15;
+        const uploadSec = data.upload_interval_seconds || 60;
+        const maxVids = data.max_videos_per_scan || 5;
+        const delaySec = data.channel_delay_seconds !== undefined ? data.channel_delay_seconds : 2;
+        const autoDl = data.auto_download !== undefined ? data.auto_download : true;
+        const autoRd = data.auto_render !== undefined ? data.auto_render : true;
+
+        // Populate Modal Fields
+        const mInterval = document.getElementById('modalSchedulerInterval');
+        if (mInterval) {
+            mInterval.value = interval;
+            updateModalIntervalBadge(interval);
+        }
+        const mUpload = document.getElementById('modalUploadInterval');
+        if (mUpload) mUpload.value = uploadSec;
+        const mMax = document.getElementById('modalMaxVideosPerScan');
+        if (mMax) mMax.value = maxVids;
+        const mDelay = document.getElementById('modalChannelDelay');
+        if (mDelay) mDelay.value = delaySec;
+        const mAutoDl = document.getElementById('modalAutoDownloadToggle');
+        if (mAutoDl) mAutoDl.checked = autoDl;
+        const mAutoRd = document.getElementById('modalAutoRenderToggle');
+        if (mAutoRd) mAutoRd.checked = autoRd;
+
+        // Populate Settings Tab Fields
+        const sInterval = document.getElementById('settingSchedulerInterval');
+        if (sInterval) sInterval.value = interval;
+        const sUpload = document.getElementById('settingUploadInterval');
+        if (sUpload) sUpload.value = uploadSec;
+        const sMax = document.getElementById('settingMaxVideosPerScan');
+        if (sMax) sMax.value = maxVids;
+        const sDelay = document.getElementById('settingChannelDelay');
+        if (sDelay) sDelay.value = delaySec;
+        const sAutoDl = document.getElementById('settingAutoDownloadToggle');
+        if (sAutoDl) sAutoDl.checked = autoDl;
+        const sAutoRd = document.getElementById('settingAutoRenderToggle');
+        if (sAutoRd) sAutoRd.checked = autoRd;
+    } catch (err) {
+        console.error('loadSchedulerSettings error:', err);
+    }
+}
+
+async function saveSchedulerSettings(btn, fromModal = true) {
+    const original = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang Lưu...';
+    }
+
+    let interval, uploadSec, maxVids, delaySec, autoDl, autoRd;
+    if (fromModal) {
+        interval = parseInt(document.getElementById('modalSchedulerInterval')?.value) || 15;
+        uploadSec = parseInt(document.getElementById('modalUploadInterval')?.value) || 60;
+        maxVids = parseInt(document.getElementById('modalMaxVideosPerScan')?.value) || 5;
+        delaySec = parseInt(document.getElementById('modalChannelDelay')?.value) || 2;
+        autoDl = document.getElementById('modalAutoDownloadToggle')?.checked ?? true;
+        autoRd = document.getElementById('modalAutoRenderToggle')?.checked ?? true;
+    } else {
+        interval = parseInt(document.getElementById('settingSchedulerInterval')?.value) || 15;
+        uploadSec = parseInt(document.getElementById('settingUploadInterval')?.value) || 60;
+        maxVids = parseInt(document.getElementById('settingMaxVideosPerScan')?.value) || 5;
+        delaySec = parseInt(document.getElementById('settingChannelDelay')?.value) || 2;
+        autoDl = document.getElementById('settingAutoDownloadToggle')?.checked ?? true;
+        autoRd = document.getElementById('settingAutoRenderToggle')?.checked ?? true;
+    }
+
+    const payload = {
+        interval_minutes: Math.max(1, interval),
+        upload_interval_seconds: Math.max(10, uploadSec),
+        max_videos_per_scan: Math.max(1, maxVids),
+        channel_delay_seconds: Math.max(0, delaySec),
+        auto_download: autoDl,
+        auto_render: autoRd
+    };
+
+    try {
+        const res = await fetch('/api/settings/scheduler', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            showToast(`✅ ${data.message || 'Đã lưu cấu hình tự động quét thành công!'}`, 'success');
+            if (fromModal) {
+                closeSchedulerSettingsModal();
+            }
+            // Sync values to both modal and tab
+            await loadSchedulerSettings();
+            // Refresh pipeline banner status immediately
+            loadPipelineStatus();
+        } else {
+            showToast('Lỗi khi lưu cấu hình scheduler: ' + (data.message || 'Không xác định'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối: ' + err.message, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
     }
 }

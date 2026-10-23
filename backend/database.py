@@ -121,6 +121,51 @@ def init_db():
     )
     ''')
 
+    # Bảng Chiến dịch tự động hóa (Auto-Pilot Campaigns)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS campaigns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        channel_id TEXT,
+        gpm_profile_id INTEGER,
+        preset_name TEXT DEFAULT 'TikTok Beta Chuẩn 9:16',
+        video_duration INTEGER DEFAULT 65,
+        speed_factor REAL DEFAULT 1.03,
+        flip_horizontal INTEGER DEFAULT 1,
+        daily_limit INTEGER DEFAULT 3,
+        post_schedule TEXT DEFAULT '11:30, 18:00, 20:30',
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (channel_id) REFERENCES channels(channel_id),
+        FOREIGN KEY (gpm_profile_id) REFERENCES gpm_profiles(id)
+    )
+    ''')
+
+    # Migration columns cho campaigns nếu chưa có
+    cursor.execute("PRAGMA table_info(campaigns)")
+    existing_camp_cols = {row["name"] for row in cursor.fetchall()}
+    new_camp_cols = {
+        "channel_ids": "TEXT DEFAULT ''",
+        "gpm_profile_ids": "TEXT DEFAULT ''",
+        "distribution_mode": "TEXT DEFAULT 'round_robin'",
+        "download_dir": "TEXT DEFAULT ''",
+        "render_dir": "TEXT DEFAULT ''",
+        "subtitle_enabled": "INTEGER DEFAULT 0",
+        "subtitle_style": "TEXT DEFAULT 'karaoke_yellow'",
+        "aspect_ratio": "TEXT DEFAULT '9:16_blur'",
+        "post_frequency": "TEXT DEFAULT 'daily'",
+        "post_interval_days": "INTEGER DEFAULT 1",
+        "post_days_of_week": "TEXT DEFAULT 'mon,tue,wed,thu,fri,sat,sun'",
+        "random_delay_minutes": "INTEGER DEFAULT 10",
+        "warmup_mode": "INTEGER DEFAULT 0",
+    }
+    for col, col_type in new_camp_cols.items():
+        if col not in existing_camp_cols:
+            try:
+                cursor.execute(f"ALTER TABLE campaigns ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
+
     conn.commit()
     conn.close()
 

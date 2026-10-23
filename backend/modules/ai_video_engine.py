@@ -56,7 +56,7 @@ class AIVideoEngine:
         speed_factor: float = 1.03
     ) -> Optional[str]:
         """
-        Xử lý video hoàn chỉnh bằng FFmpeg với các cơ chế lách bản quyền TikTok Beta:
+        Xử lý video hoàn chỉnh bằng FFmpeg với các cơ chế tối ưu hóa video TikTok Beta:
         1. Cắt đoạn viral dài 60 - 90s (chuẩn >1 phút)
         2. Format dọc 9:16 (Scale & Pad/Blur)
         3. Lật ngang (Horizontal Flip)
@@ -149,7 +149,7 @@ class AIVideoEngine:
 
     def auto_slice_and_render_parts(self, input_file: str, video_id: str, total_duration: int, part_duration: int = 65) -> List[str]:
         """
-        Tự động cắt video dài thành nhiều Part (mỗi part > 60s) và render lách bản quyền
+        Tự động cắt video dài thành nhiều Part (mỗi part > 60s) và render chuẩn hóa TikTok
         """
         rendered_files = []
         if total_duration <= part_duration:

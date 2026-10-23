@@ -1,3 +1,4 @@
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional
@@ -108,7 +109,7 @@ class YouTubeRSSMonitor:
             "items": new_items
         }
 
-    def scan_all_monitored_channels(self) -> int:
+    def scan_all_monitored_channels(self, max_per_channel: int = 5, delay: float = 2.0) -> int:
         """Quét toàn bộ danh sách kênh theo dõi đang hoạt động (is_active = 1 và auto_download = 1)"""
         conn = get_connection()
         cursor = conn.cursor()
@@ -117,13 +118,19 @@ class YouTubeRSSMonitor:
         conn.close()
 
         total_new_downloaded = 0
-        for ch in channels:
+        for idx, ch in enumerate(channels):
+            if idx > 0 and delay > 0:
+                time.sleep(delay)
+
             ch_id = ch["channel_id"]
             proxy = ch.get("custom_proxy") or None
             target_dir = ch.get("download_dir") or None
 
             videos = self.check_channel_rss(ch_id)
+            channel_downloaded = 0
             for v in videos:
+                if max_per_channel > 0 and channel_downloaded >= max_per_channel:
+                    break
                 vid = v["video_id"]
                 conn = get_connection()
                 cursor = conn.cursor()
@@ -136,6 +143,7 @@ class YouTubeRSSMonitor:
                     res = yt_downloader.download_video(v["url"], proxy=proxy, target_dir=target_dir)
                     if res:
                         total_new_downloaded += 1
+                        channel_downloaded += 1
 
         return total_new_downloaded
 
