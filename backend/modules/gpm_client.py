@@ -21,12 +21,22 @@ class GPMClient:
             except Exception:
                 self.cached_working_base = None
 
-        # Dò qua các cổng ứng viên và versions
+        # Dò qua các cổng ứng viên và versions với socket check siêu tốc
+        import socket
         for port in GPM_PORT_CANDIDATES:
+            # Kiểm tra nhanh cổng có đang mở không trước khi gửi HTTP request
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.06)
+                    if s.connect_ex(("127.0.0.1", port)) != 0:
+                        continue
+            except Exception:
+                continue
+
             for ver in ["v1", "v3"]:
                 base = f"http://127.0.0.1:{port}/api/{ver}"
                 try:
-                    r = requests.get(f"{base}/profiles?page=1&per_page=1", timeout=1.5)
+                    r = requests.get(f"{base}/profiles?page=1&per_page=1", timeout=1.0)
                     if r.status_code == 200:
                         data = r.json()
                         if isinstance(data, dict) and data.get("success"):
@@ -73,9 +83,45 @@ class GPMClient:
             "message": "Không thể kết nối GPMLogin API"
         }
 
+    def ensure_gpm_running(self) -> bool:
+        """Kiểm tra nếu GPMLogin đang tắt thì tự động bật lên"""
+        import os, time, subprocess
+        status = self.check_health()
+        if status.get("running"):
+            return True
+
+        candidates = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\GPMLoginGlobal\GPMLoginGlobal.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\GPMLogin\GPMLogin.exe"),
+            r"C:\Program Files\GPMLogin\GPMLogin.exe",
+            r"C:\Program Files (x86)\GPMLogin\GPMLogin.exe",
+        ]
+        exe_path = None
+        for p in candidates:
+            if os.path.exists(p):
+                exe_path = p
+                break
+
+        if exe_path:
+            log_event("INFO", f"Phát hiện GPMLogin đang tắt. Đang tự động khởi chạy: {exe_path}")
+            try:
+                subprocess.Popen([exe_path], shell=False)
+                for _ in range(12):
+                    time.sleep(1)
+                    if self.check_health().get("running"):
+                        log_event("INFO", "GPMLogin đã khởi động thành công và API sẵn sàng!")
+                        return True
+            except Exception as e:
+                log_event("ERROR", f"Không thể tự động bật GPMLogin: {e}")
+
+        return False
+
     def get_profiles(self) -> List[Dict[str, Any]]:
         """Lấy toàn bộ danh sách profile từ GPMLogin (chuẩn pagination như agent.js)"""
         base = self.discover_api_base()
+        if not base:
+            self.ensure_gpm_running()
+            base = self.discover_api_base()
         if not base:
             return []
 
@@ -107,19 +153,42 @@ class GPMClient:
             log_event("WARNING", f"Lỗi lấy danh sách GPM profiles: {str(e)}")
         return []
 
-    def start_profile(self, profile_id: str, target_url: str = "") -> Optional[str]:
+    def start_profile(self, profile_id: str, target_url: str = "", low_ram_mode: bool = False) -> Optional[str]:
         """
         Khởi chạy profile trên GPMLogin
         Trả về remote_debugging_address (VD: 127.0.0.1:12345)
+        - low_ram_mode=True: Tiết kiệm tối đa RAM (tắt GPU, tắt load ảnh, ẩn cửa sổ offscreen)
         """
         base = self.discover_api_base()
+        if not base:
+            self.ensure_gpm_running()
+            base = self.discover_api_base()
         if not base:
             return None
 
         try:
             url = f"{base}/profiles/start/{profile_id}?skip_proxy_check=true"
+            args_list = []
+            if low_ram_mode:
+                args_list.extend([
+                    "--window-position=-2400,-2400",
+                    "--window-size=240,240",
+                    "--blink-settings=imagesEnabled=false",
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--mute-audio",
+                    "--no-first-run"
+                ])
             if target_url:
-                url += f"&url={target_url}&addition_args={target_url}"
+                args_list.append(target_url)
+
+            if args_list:
+                import urllib.parse
+                combined_args = " ".join(args_list)
+                encoded_args = urllib.parse.quote(combined_args)
+                url += f"&addition_args={encoded_args}"
+                if target_url:
+                    url += f"&url={urllib.parse.quote(target_url)}"
 
             resp = requests.get(url, timeout=30)
             if resp.status_code == 200:

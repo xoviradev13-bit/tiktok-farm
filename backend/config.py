@@ -21,11 +21,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 RENDERED_DIR = DATA_DIR / "rendered"
+LOGS_DIR = DATA_DIR / "logs"
+LOG_FILE_PATH = LOGS_DIR / "app.log"
 DB_PATH = DATA_DIR / "tiktok_tool.db"
 
 # Tự động tạo thư mục nếu chưa tồn tại
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 RENDERED_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Tự động đọc file .env nếu có
 def _load_env_file(env_path: Path):
@@ -58,9 +61,17 @@ YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-# Cấu hình AI API (Tùy chọn: Gemini hoặc OpenAI)
+# Cấu hình AI Cloud API & Local Models
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek")  # "deepseek" | "gemini" | "openai"
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")  # "deepseek-chat" | "deepseek-reasoner"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")  # "gemini-2.5-flash" | "gemini-1.5-flash" | "gemini-1.5-pro"
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # "gpt-4o-mini" | "gpt-4o"
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")  # "tiny" | "base" | "small"
+ENABLE_DYNAMIC_SUBTITLES = os.getenv("ENABLE_DYNAMIC_SUBTITLES", "true").lower() in ("true", "1", "yes")
+ENABLE_ANTI_DETECT = os.getenv("ENABLE_ANTI_DETECT", "true").lower() in ("true", "1", "yes")
 
 # Server config
 SERVER_HOST = "127.0.0.1"
@@ -97,11 +108,25 @@ def save_env_config(updates: Dict[str, str]) -> bool:
         f.writelines(new_lines)
         
     # Đồng bộ lại các biến toàn cục
-    global YOUTUBE_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GEMINI_API_KEY, OPENAI_API_KEY, GPM_API_BASE_URL
+    global YOUTUBE_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GPM_API_BASE_URL
+    global DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, AI_PROVIDER
+    global DEEPSEEK_MODEL, GEMINI_MODEL, OPENAI_MODEL
+    global WHISPER_MODEL_SIZE, ENABLE_DYNAMIC_SUBTITLES, ENABLE_ANTI_DETECT
+
     YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+    GPM_API_BASE_URL = os.getenv("GPM_API_BASE_URL", "http://127.0.0.1:9495/api/v1")
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    GPM_API_BASE_URL = os.getenv("GPM_API_BASE_URL", "http://127.0.0.1:9495/api/v1")
+    AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")
+    ENABLE_DYNAMIC_SUBTITLES = os.getenv("ENABLE_DYNAMIC_SUBTITLES", "true").lower() in ("true", "1", "yes")
+    ENABLE_ANTI_DETECT = os.getenv("ENABLE_ANTI_DETECT", "true").lower() in ("true", "1", "yes")
     return True
+
+

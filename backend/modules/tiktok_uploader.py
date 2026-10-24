@@ -2,8 +2,12 @@ import os
 import time
 from typing import Dict, Any, Optional
 from backend.modules.gpm_client import gpm_client
+from backend.modules.account_health import account_health
 from backend.database import log_event, get_connection
+from backend.logger import get_logger
 from backend.config import DATA_DIR
+
+logger = get_logger("tiktok_uploader")
 
 SCREENSHOT_DIR = DATA_DIR / "screenshots"
 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -94,11 +98,22 @@ class TikTokUploader:
         if not os.path.exists(video_path):
             return {"success": False, "message": f"Không tìm thấy file video: {video_path}"}
 
+        try:
+            from backend.modules.tiktok_tracker import set_profile_busy
+            set_profile_busy(gpm_profile_id, True)
+        except Exception:
+            pass
+
         log_event("INFO", f"Bắt đầu upload lên GPM profile {gpm_profile_id}: {os.path.basename(video_path)}")
 
         # 1. Mở hoặc kết nối profile GPMLogin (nếu profile đã mở sẵn, GPM trả về port hiện tại)
         remote_address = gpm_client.start_profile(gpm_profile_id)
         if not remote_address:
+            try:
+                from backend.modules.tiktok_tracker import set_profile_busy
+                set_profile_busy(gpm_profile_id, False)
+            except Exception:
+                pass
             return {"success": False, "message": f"Không thể lấy cổng debug GPM cho profile {gpm_profile_id}"}
 
         try:
@@ -106,6 +121,11 @@ class TikTokUploader:
         except ImportError:
             if close_browser_on_finish:
                 gpm_client.stop_profile(gpm_profile_id)
+            try:
+                from backend.modules.tiktok_tracker import set_profile_busy
+                set_profile_busy(gpm_profile_id, False)
+            except Exception:
+                pass
             return {"success": False, "message": "Playwright chưa được cài. Chạy: pip install playwright && playwright install chromium"}
 
         result = {"success": False, "message": "Chưa bắt đầu"}
@@ -158,12 +178,22 @@ class TikTokUploader:
                             continue
 
                 if not upload_reached:
-                    result = {"success": False, "message": "Không thể mở trang upload TikTok. Profile có thể chưa đăng nhập."}
+                    # Kiểm tra xem có phải do lỗi proxy hay mạng không
+                    health = account_health.check_page_account_health(page, gpm_profile_id)
+                    reason = health.get("reason") if not health.get("healthy") else "Không thể mở trang upload TikTok. Hãy kiểm tra kết nối mạng hoặc Proxy của profile."
+                    logger.error(f"[UPLOAD] {gpm_profile_id}: {reason}")
+                    result = {"success": False, "error_type": "PAGE_UNREACHABLE", "message": reason}
                     return result
 
-                # Kiểm tra login
-                if "login" in page.url.lower():
-                    result = {"success": False, "message": f"Profile {gpm_profile_id} chưa đăng nhập TikTok. Hãy đăng nhập nick trên GPM trước."}
+                # Kiểm tra toàn diện sức khỏe tài khoản (Banned, Restricted, Checkpoint, Unlogged)
+                health = account_health.check_page_account_health(page, gpm_profile_id)
+                if not health.get("healthy"):
+                    logger.error(f"[UPLOAD ABORT] Tài khoản {gpm_profile_id} có vấn đề: {health['status'].upper()} - {health['reason']}")
+                    result = {
+                        "success": False,
+                        "error_type": f"ACCOUNT_{health['status'].upper()}",
+                        "message": health["reason"]
+                    }
                     return result
 
                 # Dọn sạch các modal nếu có sẵn khi vào trang
@@ -299,6 +329,22 @@ class TikTokUploader:
                             time.sleep(6)
                             log_event("INFO", f"✅ Đã đăng video thành công - Profile {gpm_profile_id}")
                             result = {"success": True, "message": "Video đã được đăng lên TikTok thành công"}
+
+                            # Tự động cập nhật chỉ số (Username & Followers) ngay trong phiên làm việc
+                            try:
+                                from backend.modules.tiktok_tracker import tiktok_tracker
+                                from backend.modules.metrics_tracker import metrics_tracker
+                                stats = tiktok_tracker.extract_metrics_from_page(page)
+                                if stats.get("is_logged_in") and stats.get("username"):
+                                    metrics_tracker.update_profile_stats(
+                                        gpm_id=gpm_profile_id,
+                                        followers=stats.get("followers", 0),
+                                        total_views=0,
+                                        username=stats.get("username") or ""
+                                    )
+                                    log_event("INFO", f"Tự động cập nhật chỉ số sau khi đăng bài: @{stats.get('username')} ({stats.get('followers')} followers)")
+                            except Exception as st_err:
+                                log_event("WARNING", f"Lỗi cập nhật stats sau upload: {st_err}")
                         else:
                             result = {"success": False, "message": "Không tìm thấy nút Đăng"}
                     except Exception as post_err:
@@ -307,9 +353,15 @@ class TikTokUploader:
                     result = {"success": True, "message": "Video đã được chuẩn bị thành công (dry-run, chưa nhấn Đăng)"}
 
         except Exception as e:
+            logger.exception(f"Lỗi Playwright upload profile {gpm_profile_id}: {e}")
             log_event("ERROR", f"Lỗi Playwright upload profile {gpm_profile_id}: {str(e)}")
             result = {"success": False, "message": str(e)}
         finally:
+            try:
+                from backend.modules.tiktok_tracker import set_profile_busy
+                set_profile_busy(gpm_profile_id, False)
+            except Exception:
+                pass
             # Chỉ tắt browser nếu caller yêu cầu đóng (mặc định giữ lại để không ngắt phiên làm việc của user)
             if close_browser_on_finish:
                 gpm_client.stop_profile(gpm_profile_id)
