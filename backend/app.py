@@ -232,6 +232,14 @@ class UpdateChannelSettingsRequest(BaseModel):
     auto_render: Optional[int] = 1
     bgm_folder: Optional[str] = ""
     bgm_volume: Optional[float] = 0.15
+    min_video_duration: Optional[int] = None
+    max_video_duration: Optional[int] = None
+    include_shorts: Optional[int] = None
+    include_longform: Optional[int] = None
+    disable_subtitle_for_shorts: Optional[int] = 0
+    subtitle_enabled: Optional[int] = None
+    subtitle_style: Optional[str] = "inherit"
+    subtitle_position: Optional[str] = "inherit"
 
 class ToggleChannelStatusRequest(BaseModel):
     channel_id: str
@@ -312,6 +320,7 @@ class CreateCampaignRequest(BaseModel):
     render_dir: Optional[str] = ""
     subtitle_enabled: Optional[int] = 0
     subtitle_style: Optional[str] = "karaoke_yellow"
+    subtitle_position: Optional[str] = "center"
     aspect_ratio: Optional[str] = "9:16_blur"
     preset_name: Optional[str] = "TikTok Beta Chuẩn 9:16"
     video_duration: Optional[int] = 65
@@ -331,6 +340,9 @@ class CreateCampaignRequest(BaseModel):
     ai_model: Optional[str] = "default"
     min_video_duration: Optional[int] = None
     max_video_duration: Optional[int] = None
+    include_shorts: Optional[int] = 1
+    include_longform: Optional[int] = 1
+    disable_subtitle_for_shorts: Optional[int] = 1
     bgm_folder: Optional[str] = ""
     bgm_volume: Optional[float] = 0.15
     is_active: Optional[int] = 1
@@ -338,6 +350,8 @@ class CreateCampaignRequest(BaseModel):
 class DownloadFilterSettingsRequest(BaseModel):
     min_video_duration: int = 300
     max_video_duration: int = 3600
+    include_shorts: bool = True
+    include_longform: bool = True
 
 class CleanupSettingsRequest(BaseModel):
     retention_mode: str = "7"  # "0", "3", "7", "14", "30", "custom", "never"
@@ -689,6 +703,10 @@ def update_channel_settings(req: UpdateChannelSettingsRequest):
     if req.bgm_volume is not None and (req.bgm_volume < 0.0 or req.bgm_volume > 1.0):
         raise HTTPException(status_code=400, detail="Âm lượng nhạc nền BGM phải từ 0.0 đến 1.0!")
 
+    if req.min_video_duration is not None and req.max_video_duration is not None:
+        if req.min_video_duration >= req.max_video_duration:
+            raise HTTPException(status_code=400, detail="Thời lượng tối thiểu phải nhỏ hơn thời lượng tối đa!")
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -701,7 +719,15 @@ def update_channel_settings(req: UpdateChannelSettingsRequest):
             auto_download = ?,
             auto_render = ?,
             bgm_folder = ?,
-            bgm_volume = ?
+            bgm_volume = ?,
+            min_video_duration = ?,
+            max_video_duration = ?,
+            include_shorts = ?,
+            include_longform = ?,
+            disable_subtitle_for_shorts = ?,
+            subtitle_enabled = ?,
+            subtitle_style = ?,
+            subtitle_position = ?
         WHERE channel_id = ?
     ''', (
         req.display_name or '',
@@ -713,6 +739,14 @@ def update_channel_settings(req: UpdateChannelSettingsRequest):
         1 if req.auto_render else 0,
         req.bgm_folder or '',
         float(req.bgm_volume) if req.bgm_volume is not None else 0.15,
+        req.min_video_duration,
+        req.max_video_duration,
+        req.include_shorts,
+        req.include_longform,
+        1 if req.disable_subtitle_for_shorts else 0,
+        req.subtitle_enabled,
+        req.subtitle_style or '',
+        req.subtitle_position or '',
         req.channel_id
     ))
     conn.commit()
@@ -1173,17 +1207,21 @@ def trigger_pipeline_cleanup(req: Optional[TriggerCleanupRequest] = None):
 def get_download_filter_settings():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM settings WHERE key IN ('download_min_duration', 'download_max_duration')")
+    cursor.execute("SELECT key, value FROM settings WHERE key IN ('download_min_duration', 'download_max_duration', 'download_include_shorts', 'download_include_longform')")
     db_s = dict(cursor.fetchall())
     conn.close()
     return {
         "status": "success",
-        "min_video_duration": int(db_s.get("download_min_duration", 300)),
+        "min_video_duration": int(db_s.get("download_min_duration", 180)),
         "max_video_duration": int(db_s.get("download_max_duration", 3600)),
+        "include_shorts": db_s.get("download_include_shorts", "1") == "1",
+        "include_longform": db_s.get("download_include_longform", "1") == "1",
     }
 
 @app.post("/api/settings/download-filter")
 def save_download_filter_settings(req: DownloadFilterSettingsRequest):
+    if not req.include_shorts and not req.include_longform:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một loại video: Shorts hoặc Video dài!")
     if req.min_video_duration < 0:
         raise HTTPException(status_code=400, detail="Thời lượng tối thiểu không thể là số âm!")
     if req.max_video_duration <= req.min_video_duration:
@@ -1192,9 +1230,11 @@ def save_download_filter_settings(req: DownloadFilterSettingsRequest):
     cursor = conn.cursor()
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('download_min_duration', ?)", (str(req.min_video_duration),))
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('download_max_duration', ?)", (str(req.max_video_duration),))
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('download_include_shorts', ?)", ("1" if req.include_shorts else "0",))
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('download_include_longform', ?)", ("1" if req.include_longform else "0",))
     conn.commit()
     conn.close()
-    log_event("INFO", f"Đã lưu bộ lọc tải video: min={req.min_video_duration}s, max={req.max_video_duration}s")
+    log_event("INFO", f"Đã lưu bộ lọc tải video: shorts={req.include_shorts}, longform={req.include_longform}, min={req.min_video_duration}s, max={req.max_video_duration}s")
     return {"status": "success", "message": "Đã lưu bộ lọc thời lượng video thành công"}
 
 # --- Auto Campaigns API ---
@@ -1300,9 +1340,10 @@ def create_campaign(req: CreateCampaignRequest):
             post_frequency, post_interval_days, post_days_of_week,
             random_delay_minutes, warmup_mode, ai_provider, ai_model,
             min_video_duration, max_video_duration, add_part_label, clips_per_video,
-            bgm_folder, bgm_volume, is_active, min_post_interval_minutes
+            bgm_folder, bgm_volume, is_active, min_post_interval_minutes,
+            include_shorts, include_longform, disable_subtitle_for_shorts, subtitle_position
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         req.name,
         main_ch,
@@ -1335,7 +1376,11 @@ def create_campaign(req: CreateCampaignRequest):
         req.bgm_folder or '',
         float(req.bgm_volume) if req.bgm_volume is not None else 0.15,
         1 if req.is_active else 0,
-        req.min_post_interval_minutes
+        req.min_post_interval_minutes,
+        1 if req.include_shorts != 0 else 0,
+        1 if req.include_longform != 0 else 0,
+        1 if req.disable_subtitle_for_shorts else 0,
+        req.subtitle_position or 'center'
     ))
     campaign_id = cursor.lastrowid
     # Persist last used download/render dirs in settings table for future campaigns
@@ -1460,7 +1505,11 @@ def update_campaign(campaign_id: int, req: CreateCampaignRequest):
             clips_per_video = ?,
             bgm_folder = ?,
             bgm_volume = ?,
-            min_post_interval_minutes = ?
+            min_post_interval_minutes = ?,
+            include_shorts = ?,
+            include_longform = ?,
+            disable_subtitle_for_shorts = ?,
+            subtitle_position = ?
         WHERE id = ?
     ''', (
         req.name,
@@ -1494,6 +1543,10 @@ def update_campaign(campaign_id: int, req: CreateCampaignRequest):
         req.bgm_folder or '',
         float(req.bgm_volume) if req.bgm_volume is not None else 0.15,
         req.min_post_interval_minutes,
+        1 if req.include_shorts != 0 else 0,
+        1 if req.include_longform != 0 else 0,
+        1 if req.disable_subtitle_for_shorts else 0,
+        req.subtitle_position or 'center',
         campaign_id
     ))
     if req.download_dir:

@@ -22,6 +22,8 @@ class YouTubeDownloader:
         min_duration: Optional[int] = None,
         max_duration: Optional[int] = None,
         is_studio: bool = False,
+        include_shorts: bool = True,
+        include_longform: bool = True,
     ) -> Optional[Dict[str, Any]]:
         """
         Tải video/shorts YouTube chất lượng tốt nhất về thư mục local.
@@ -72,17 +74,22 @@ class YouTubeDownloader:
             },
         }
 
-        # Filter duration before downloading if specified
-        if min_duration is not None or max_duration is not None:
-            def duration_filter(info_dict, *, incomplete=False):
-                dur = info_dict.get('duration')
-                if dur is not None:
+        # Filter duration & video type (Shorts <= 180s vs Long-form > 180s)
+        def duration_filter(info_dict, *, incomplete=False):
+            dur = info_dict.get('duration')
+            if dur is not None:
+                is_short = (dur <= 180)
+                if is_short and not include_shorts:
+                    return f"Bỏ qua YouTube Shorts ({dur}s) theo cấu hình bộ lọc"
+                if not is_short and not include_longform:
+                    return f"Bỏ qua video dài Long-form ({dur}s) theo cấu hình bộ lọc"
+                if not is_short:
                     if min_duration is not None and dur < min_duration:
                         return f"Thời lượng video ({dur}s) ngắn hơn mức tối thiểu ({min_duration}s)"
                     if max_duration is not None and dur > max_duration:
                         return f"Thời lượng video ({dur}s) dài hơn mức tối đa ({max_duration}s)"
-                return None
-            ydl_opts['match_filter'] = duration_filter
+            return None
+        ydl_opts['match_filter'] = duration_filter
 
         if proxy and proxy.strip():
             p = proxy.strip()
@@ -112,13 +119,22 @@ class YouTubeDownloader:
                 channel_id = info.get('channel_id')
                 tags = ",".join(info.get('tags', [])[:10])
 
-                # Secondary safeguard for duration
-                if min_duration is not None and duration and duration < min_duration:
-                    log_event("INFO", f"Bỏ qua video '{title}' ({duration}s): ngắn hơn tối thiểu {min_duration}s")
-                    return None
-                if max_duration is not None and duration and duration > max_duration:
-                    log_event("INFO", f"Bỏ qua video '{title}' ({duration}s): dài hơn tối đa {max_duration}s")
-                    return None
+                # Secondary safeguard for duration & video type
+                if duration:
+                    is_short = (duration <= 180)
+                    if is_short and not include_shorts:
+                        log_event("INFO", f"Bỏ qua YouTube Shorts '{title}' ({duration}s) theo cấu hình")
+                        return None
+                    if not is_short and not include_longform:
+                        log_event("INFO", f"Bỏ qua video dài Long-form '{title}' ({duration}s) theo cấu hình")
+                        return None
+                    if not is_short:
+                        if min_duration is not None and duration < min_duration:
+                            log_event("INFO", f"Bỏ qua video '{title}' ({duration}s): ngắn hơn tối thiểu {min_duration}s")
+                            return None
+                        if max_duration is not None and duration > max_duration:
+                            log_event("INFO", f"Bỏ qua video '{title}' ({duration}s): dài hơn tối đa {max_duration}s")
+                            return None
 
                 # Tìm đường dẫn file đã lưu chính xác
                 downloaded_file = ydl.prepare_filename(info)

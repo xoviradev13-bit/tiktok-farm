@@ -222,7 +222,7 @@ function markInputError(elOrId, message = '', type = 'error') {
 
     try {
         if (typeof el.focus === 'function') el.focus();
-    } catch (_) {}
+    } catch (_) { }
 
     // Add inline error feedback under input if message is supplied
     if (message && el.parentElement) {
@@ -307,7 +307,7 @@ function isValidProxyFormat(proxyStr) {
     if (!clean) return true;
     // Format: host:port, host:port:user:pass, user:pass@host:port (with optional scheme)
     return /^(https?:\/\/|socks5:\/\/)?([a-zA-Z0-9.-]+):(\d{2,5})(:[^:]+:[^:]+)?$/.test(clean) ||
-           /^(https?:\/\/|socks5:\/\/)?([^:]+:[^@]+@)?([a-zA-Z0-9.-]+):(\d{2,5})$/.test(clean);
+        /^(https?:\/\/|socks5:\/\/)?([^:]+:[^@]+@)?([a-zA-Z0-9.-]+):(\d{2,5})$/.test(clean);
 }
 
 
@@ -1876,26 +1876,26 @@ async function openChannelVideosModal(channelId, channelTitle = '') {
         bodyEl.innerHTML = `
             <div style="display:flex; flex-direction:column; gap:10px;">
                 ${vids.map(v => {
-                    const isRendered = v.has_rendered || v.status === 'rendered' || (v.rendered_parts && v.rendered_parts.length > 0);
-                    const isRendering = v.status === 'rendering';
-                    
-                    let renderBadge = '';
-                    if (isRendering) {
-                        renderBadge = '<span class="badge badge-purple" style="font-size:11px;" title="Video đang trong tiến trình xử lý render"><i class="fa-solid fa-spinner fa-spin"></i> Đang render AI...</span>';
-                    } else if (isRendered) {
-                        const partsText = (v.rendered_parts && v.rendered_parts.length > 1) ? `${v.rendered_parts.length} Parts (9:16)` : 'Đã Render 9:16';
-                        renderBadge = `<span class="badge badge-success" style="font-size:11px;" title="Video dọc 9:16 đã render hoàn tất"><i class="fa-solid fa-circle-check"></i> ${partsText}</span>`;
-                    } else {
-                        renderBadge = '<span class="badge badge-secondary" style="font-size:11px;" title="Chưa tạo bản cắt 9:16 cho video này"><i class="fa-solid fa-hourglass-half"></i> Chưa render</span>';
-                    }
+            const isRendered = v.has_rendered || v.status === 'rendered' || (v.rendered_parts && v.rendered_parts.length > 0);
+            const isRendering = v.status === 'rendering';
 
-                    const dlBadge = v.has_raw || v.download_path
-                        ? `<span class="badge badge-blue" style="font-size:11px;" title="Đã lưu video MP4 gốc trên máy"><i class="fa-solid fa-cloud-arrow-down"></i> Đã tải MP4 gốc</span>`
-                        : '<span class="badge badge-secondary" style="font-size:11px;" title="Chưa có file MP4 gốc">Chưa có MP4</span>';
+            let renderBadge = '';
+            if (isRendering) {
+                renderBadge = '<span class="badge badge-purple" style="font-size:11px;" title="Video đang trong tiến trình xử lý render"><i class="fa-solid fa-spinner fa-spin"></i> Đang render AI...</span>';
+            } else if (isRendered) {
+                const partsText = (v.rendered_parts && v.rendered_parts.length > 1) ? `${v.rendered_parts.length} Parts (9:16)` : 'Đã Render 9:16';
+                renderBadge = `<span class="badge badge-success" style="font-size:11px;" title="Video dọc 9:16 đã render hoàn tất"><i class="fa-solid fa-circle-check"></i> ${partsText}</span>`;
+            } else {
+                renderBadge = '<span class="badge badge-secondary" style="font-size:11px;" title="Chưa tạo bản cắt 9:16 cho video này"><i class="fa-solid fa-hourglass-half"></i> Chưa render</span>';
+            }
 
-                    let partsHtml = '';
-                    if (v.rendered_parts && v.rendered_parts.length > 0) {
-                        partsHtml = `
+            const dlBadge = v.has_raw || v.download_path
+                ? `<span class="badge badge-blue" style="font-size:11px;" title="Đã lưu video MP4 gốc trên máy"><i class="fa-solid fa-cloud-arrow-down"></i> Đã tải MP4 gốc</span>`
+                : '<span class="badge badge-secondary" style="font-size:11px;" title="Chưa có file MP4 gốc">Chưa có MP4</span>';
+
+            let partsHtml = '';
+            if (v.rendered_parts && v.rendered_parts.length > 0) {
+                partsHtml = `
                             <div style="display:flex; gap:5px; flex-wrap:wrap; margin-top:5px;">
                                 <span style="font-size:10.5px; color:var(--text-muted); align-self:center;">Parts:</span>
                                 ${v.rendered_parts.map(p => `
@@ -1903,9 +1903,9 @@ async function openChannelVideosModal(channelId, channelTitle = '') {
                                 `).join('')}
                             </div>
                         `;
-                    }
+            }
 
-                    return `
+            return `
                         <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                             <div style="flex:1; min-width:240px; max-width:440px;">
                                 <div style="display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-muted); margin-bottom:4px;">
@@ -1934,7 +1934,7 @@ async function openChannelVideosModal(channelId, channelTitle = '') {
                             </div>
                         </div>
                     `;
-                }).join('')}
+        }).join('')}
             </div>
         `;
     } catch (err) {
@@ -4090,6 +4090,28 @@ function openChannelSettingsModal(channelId) {
     document.getElementById('settingAutoDownload').checked = channel.auto_download === 1;
     document.getElementById('settingAutoRender').checked = channel.auto_render === 1;
 
+    // Load cài đặt tải định dạng & thời lượng riêng cho kênh
+    const chIncShorts = document.getElementById('settingChannelIncludeShorts');
+    if (chIncShorts) chIncShorts.checked = (channel.include_shorts !== 0);
+    const chIncLong = document.getElementById('settingChannelIncludeLongform');
+    if (chIncLong) chIncLong.checked = (channel.include_longform !== 0);
+    const chMinDur = document.getElementById('settingChannelMinDuration');
+    applyMinDurationState(chIncShorts, chIncLong, chMinDur, channel.min_video_duration ?? null);
+    const chMaxDur = document.getElementById('settingChannelMaxDuration');
+    if (chMaxDur) chMaxDur.value = (channel.max_video_duration != null) ? channel.max_video_duration : '';
+    // Load cài đặt Phụ đề AI riêng cho kênh
+    const isSubEnabled = (channel.subtitle_enabled !== 0);
+    const chSubSwitch = document.getElementById('settingChannelSubtitleSwitch');
+    if (chSubSwitch) chSubSwitch.checked = isSubEnabled;
+    const chSubWrap = document.getElementById('settingChannelSubtitleSettingsWrap');
+    if (chSubWrap) chSubWrap.style.display = isSubEnabled ? '' : 'none';
+    const chSubStyle = document.getElementById('settingChannelSubtitleStyle');
+    if (chSubStyle) chSubStyle.value = channel.subtitle_style || 'inherit';
+    const chSubPos = document.getElementById('settingChannelSubtitlePosition');
+    if (chSubPos) chSubPos.value = channel.subtitle_position || 'inherit';
+    const chNoSubShorts = document.getElementById('settingChannelDisableSubtitleForShorts');
+    if (chNoSubShorts) chNoSubShorts.checked = (channel.disable_subtitle_for_shorts !== 0);
+
     // Load và gán cài đặt BGM cho kênh
     populateChannelBgmSelect(channel.bgm_folder || '', channel.bgm_volume != null ? channel.bgm_volume : 0.15);
 
@@ -4143,6 +4165,23 @@ async function saveChannelSettings(btn) {
         return;
     }
 
+    const incShorts = document.getElementById('settingChannelIncludeShorts')?.checked ? 1 : 0;
+    const incLong = document.getElementById('settingChannelIncludeLongform')?.checked ? 1 : 0;
+    if (!incShorts && !incLong) {
+        showToast('⚠️ Vui lòng chọn ít nhất một định dạng video: Shorts hoặc Video Dài!', true);
+        return;
+    }
+
+    const minDurRaw = (document.getElementById('settingChannelMinDuration')?.value || '').trim();
+    const maxDurRaw = (document.getElementById('settingChannelMaxDuration')?.value || '').trim();
+    const minDur = minDurRaw !== '' && !isNaN(parseInt(minDurRaw, 10)) ? parseInt(minDurRaw, 10) : null;
+    const maxDur = maxDurRaw !== '' && !isNaN(parseInt(maxDurRaw, 10)) ? parseInt(maxDurRaw, 10) : null;
+
+    if (minDur !== null && maxDur !== null && minDur >= maxDur) {
+        markInputError('settingChannelMinDuration', 'Thời lượng tối thiểu phải nhỏ hơn thời lượng tối đa!');
+        return;
+    }
+
     const payload = {
         channel_id: channelId,
         display_name: displayName,
@@ -4153,7 +4192,15 @@ async function saveChannelSettings(btn) {
         auto_download: document.getElementById('settingAutoDownload')?.checked ? 1 : 0,
         auto_render: document.getElementById('settingAutoRender')?.checked ? 1 : 0,
         bgm_folder: document.getElementById('settingBgmFolder')?.value || '',
-        bgm_volume: bgmVolume
+        bgm_volume: bgmVolume,
+        min_video_duration: minDur,
+        max_video_duration: maxDur,
+        include_shorts: incShorts,
+        include_longform: incLong,
+        disable_subtitle_for_shorts: document.getElementById('settingChannelDisableSubtitleForShorts')?.checked ? 1 : 0,
+        subtitle_enabled: document.getElementById('settingChannelSubtitleSwitch')?.checked ? 1 : 0,
+        subtitle_style: document.getElementById('settingChannelSubtitleStyle')?.value || 'inherit',
+        subtitle_position: document.getElementById('settingChannelSubtitlePosition')?.value || 'inherit'
     };
 
     const origHtml = btn ? btn.innerHTML : '';
@@ -4171,8 +4218,29 @@ async function saveChannelSettings(btn) {
         const data = await res.json();
         if (res.ok && data.status === 'success') {
             showToast('✅ Đã lưu cấu hình kênh thành công!', 'success');
+            // Optimistically update cachedSavedChannels in memory so immediate re-opens show the new data
+            const ch = (cachedSavedChannels || []).find(c => c.channel_id === channelId);
+            if (ch) {
+                ch.display_name = displayName;
+                ch.custom_proxy = customProxy;
+                ch.download_dir = downloadDir;
+                ch.render_dir = renderDir;
+                ch.is_active = payload.is_active;
+                ch.auto_download = payload.auto_download;
+                ch.auto_render = payload.auto_render;
+                ch.bgm_folder = payload.bgm_folder;
+                ch.bgm_volume = payload.bgm_volume;
+                ch.min_video_duration = minDur;
+                ch.max_video_duration = maxDur;
+                ch.include_shorts = incShorts;
+                ch.include_longform = incLong;
+                ch.disable_subtitle_for_shorts = payload.disable_subtitle_for_shorts;
+                ch.subtitle_enabled = payload.subtitle_enabled;
+                ch.subtitle_style = payload.subtitle_style;
+                ch.subtitle_position = payload.subtitle_position;
+            }
             closeChannelSettingsModal();
-            loadSavedChannels();
+            await loadSavedChannels();
         } else {
             showToast('Lỗi khi lưu: ' + (data.detail || data.message || 'Thất bại'), 'error');
         }
@@ -4733,6 +4801,13 @@ async function loadCampaigns() {
             const dlDir = c.download_dir || 'data/downloads';
             const rdDir = c.render_dir || 'data/rendered';
 
+            const filterTypes = [];
+            if (c.include_shorts !== 0) filterTypes.push('Shorts');
+            if (c.include_longform !== 0) filterTypes.push('Video Dài');
+            const filterBadge = filterTypes.length > 0
+                ? `<span class="badge badge-secondary" style="font-size:10px; margin-top:3px;" title="Bộ lọc định dạng tải"><i class="fa-solid fa-filter"></i> ${filterTypes.join(' + ')}</span>`
+                : '';
+
             return `
             <div class="campaign-card ${c.is_active ? '' : 'campaign-paused'}">
                 <div class="campaign-header-row">
@@ -4771,7 +4846,10 @@ async function loadCampaigns() {
                         <div class="node-text">
                             <h5>${escapeHtml(chTitle)}</h5>
                             <p>${chCount > 1 ? `Nhóm ${chCount} kênh lấy video tự động` : 'Quét RSS mỗi 15 phút'}</p>
-                            <span class="pipeline-dir-tag" title="Thư mục tải MP4 gốc"><i class="fa-regular fa-folder"></i> ${escapeHtml(dlDir)}</span>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                                <span class="pipeline-dir-tag" title="Thư mục tải MP4 gốc"><i class="fa-regular fa-folder"></i> ${escapeHtml(dlDir)}</span>
+                                ${filterBadge}
+                            </div>
                         </div>
                     </div>
 
@@ -4834,10 +4912,26 @@ async function openNewCampaignModal() {
     // Reset inputs
     const nameInput = document.getElementById('campaignNameInput');
     if (nameInput) nameInput.value = '';
+    const incShorts = document.getElementById('campaignIncludeShorts');
+    if (incShorts) incShorts.checked = true;
+    const incLong = document.getElementById('campaignIncludeLongform');
+    if (incLong) incLong.checked = true;
     const minDurInput = document.getElementById('campaignMinDurationInput');
-    if (minDurInput) minDurInput.value = '';
+    // Both checked by default → disabled (Shorts is checked)
+    applyMinDurationState(
+        document.getElementById('campaignIncludeShorts'),
+        document.getElementById('campaignIncludeLongform'),
+        minDurInput, null
+    );
     const maxDurInput = document.getElementById('campaignMaxDurationInput');
     if (maxDurInput) maxDurInput.value = '';
+    const newCampNoSubShorts = document.getElementById('campaignDisableSubtitleForShorts');
+    if (newCampNoSubShorts) newCampNoSubShorts.checked = true;  // default checked when subtitle is on
+    // Reset subtitle switch & wrapper visibility
+    const newSubSwitch = document.getElementById('campaignSubtitleSwitch');
+    if (newSubSwitch) newSubSwitch.checked = true;
+    const newSubWrap = document.getElementById('campaignSubtitleSettingsWrap');
+    if (newSubWrap) newSubWrap.style.display = '';
 
     const clipsInput = document.getElementById('campaignClipsPerVideoInput');
     if (clipsInput) clipsInput.value = '3';
@@ -4876,8 +4970,19 @@ async function openNewCampaignModal() {
         const dlInput = document.getElementById('campaignDownloadDir');
         const rdInput = document.getElementById('campaignRenderDir');
         if (dlInput && defData.download_dir) dlInput.value = defData.download_dir;
-        if (rdInput && defData.render_dir) rdInput.value = defData.render_dir;
     } catch (_) { }
+
+    // 4. Ensure BGM Categories loaded
+    if (!cachedAudioCategories.length) {
+        try {
+            const aRes = await fetch('/api/audio/categories');
+            const aData = await aRes.json();
+            if (aData.status === 'success') {
+                cachedAudioCategories = aData.categories || [];
+                populateAllBgmSelects(cachedAudioCategories);
+            }
+        } catch (_) { }
+    }
 }
 
 function renderCampaignChannelsCheckboxes(channels) {
@@ -5090,6 +5195,13 @@ async function handleCreateCampaignSubmit(e) {
         intervalDays = customIntVal;
     }
 
+    const incShorts = document.getElementById('campaignIncludeShorts')?.checked ? 1 : 0;
+    const incLong = document.getElementById('campaignIncludeLongform')?.checked ? 1 : 0;
+    if (!incShorts && !incLong) {
+        showToast('⚠️ Vui lòng chọn ít nhất một định dạng video: Shorts hoặc Video Dài!', true);
+        return;
+    }
+
     const minDurVal = document.getElementById('campaignMinDurationInput')?.value.trim();
     const maxDurVal = document.getElementById('campaignMaxDurationInput')?.value.trim();
     if (minDurVal && maxDurVal) {
@@ -5137,10 +5249,14 @@ async function handleCreateCampaignSubmit(e) {
         video_duration: parseInt(document.getElementById('campaignVideoDuration')?.value, 10) || 65,
         min_video_duration: minDurVal ? parseInt(minDurVal, 10) : null,
         max_video_duration: maxDurVal ? parseInt(maxDurVal, 10) : null,
+        include_shorts: incShorts,
+        include_longform: incLong,
         ai_model: document.getElementById('campaignAiModel')?.value || 'default',
         ai_provider: (document.getElementById('campaignAiModel')?.value || '').startsWith('gemini') ? 'gemini' : ((document.getElementById('campaignAiModel')?.value || '').startsWith('gpt') ? 'openai' : 'deepseek'),
         subtitle_enabled: document.getElementById('campaignSubtitleSwitch')?.checked ? 1 : 0,
+        disable_subtitle_for_shorts: document.getElementById('campaignDisableSubtitleForShorts')?.checked ? 1 : 0,
         subtitle_style: document.getElementById('campaignSubtitleStyle')?.value || 'karaoke_yellow',
+        subtitle_position: document.getElementById('campaignSubtitlePosition')?.value || 'center',
         add_part_label: document.getElementById('campaignAddPartLabelSwitch')?.checked ? 1 : 0,
         clips_per_video: clipsPerVid,
         speed_factor: document.getElementById('campaignSpeedSwitch')?.checked ? 1.03 : 1.0,
@@ -5274,8 +5390,14 @@ async function openEditCampaignModal(id) {
         const durSel = document.getElementById('editCampaignVideoDuration');
         if (durSel) durSel.value = String(c.video_duration || 65);
 
+        const editIncShorts = document.getElementById('editCampaignIncludeShorts');
+        if (editIncShorts) editIncShorts.checked = (c.include_shorts !== 0);
+
+        const editIncLong = document.getElementById('editCampaignIncludeLongform');
+        if (editIncLong) editIncLong.checked = (c.include_longform !== 0);
+
         const minDurInput = document.getElementById('editCampaignMinDurationInput');
-        if (minDurInput) minDurInput.value = (c.min_video_duration != null) ? c.min_video_duration : '';
+        applyMinDurationState(editIncShorts, editIncLong, minDurInput, c.min_video_duration ?? null);
 
         const maxDurInput = document.getElementById('editCampaignMaxDurationInput');
         if (maxDurInput) maxDurInput.value = (c.max_video_duration != null) ? c.max_video_duration : '';
@@ -5286,8 +5408,18 @@ async function openEditCampaignModal(id) {
         const subSwitch = document.getElementById('editCampaignSubtitleSwitch');
         if (subSwitch) subSwitch.checked = c.subtitle_enabled === 1;
 
+        const editCampNoSubShorts = document.getElementById('editCampaignDisableSubtitleForShorts');
+        if (editCampNoSubShorts) editCampNoSubShorts.checked = (c.disable_subtitle_for_shorts !== 0);
+
+        // Show/hide subtitle settings based on subtitle_enabled
+        const editSubWrap = document.getElementById('editCampaignSubtitleSettingsWrap');
+        if (editSubWrap) editSubWrap.style.display = (c.subtitle_enabled === 1) ? '' : 'none';
+
         const subStyle = document.getElementById('editCampaignSubtitleStyle');
         if (subStyle) subStyle.value = c.subtitle_style || 'karaoke_yellow';
+
+        const subPos = document.getElementById('editCampaignSubtitlePosition');
+        if (subPos) subPos.value = c.subtitle_position || 'center';
 
         const flipSwitch = document.getElementById('editCampaignFlipSwitch');
         if (flipSwitch) flipSwitch.checked = c.flip_horizontal === 1;
@@ -5342,6 +5474,17 @@ async function openEditCampaignModal(id) {
         const bgmWrap = document.getElementById('editCampaignBgmSettingsWrap');
         if (bgmSwitch) bgmSwitch.checked = hasBgm;
         if (bgmWrap) bgmWrap.style.display = hasBgm ? 'grid' : 'none';
+
+        if (!cachedAudioCategories.length) {
+            try {
+                const aRes = await fetch('/api/audio/categories');
+                const aData = await aRes.json();
+                if (aData.status === 'success') {
+                    cachedAudioCategories = aData.categories || [];
+                    populateAllBgmSelects(cachedAudioCategories);
+                }
+            } catch (_) { }
+        }
 
         const bgmFolderSel = document.getElementById('editCampaignBgmFolder');
         if (bgmFolderSel) bgmFolderSel.value = c.bgm_folder || '';
@@ -5546,6 +5689,13 @@ async function handleEditCampaignSubmit(e) {
         intervalDays = customIntVal;
     }
 
+    const editIncShorts = document.getElementById('editCampaignIncludeShorts')?.checked ? 1 : 0;
+    const editIncLong = document.getElementById('editCampaignIncludeLongform')?.checked ? 1 : 0;
+    if (!editIncShorts && !editIncLong) {
+        showToast('⚠️ Vui lòng chọn ít nhất một định dạng video: Shorts hoặc Video Dài!', true);
+        return;
+    }
+
     const minDurVal = document.getElementById('editCampaignMinDurationInput')?.value.trim();
     const maxDurVal = document.getElementById('editCampaignMaxDurationInput')?.value.trim();
     if (minDurVal && maxDurVal) {
@@ -5593,10 +5743,14 @@ async function handleEditCampaignSubmit(e) {
         video_duration: parseInt(document.getElementById('editCampaignVideoDuration')?.value, 10) || 65,
         min_video_duration: minDurVal ? parseInt(minDurVal, 10) : null,
         max_video_duration: maxDurVal ? parseInt(maxDurVal, 10) : null,
+        include_shorts: editIncShorts,
+        include_longform: editIncLong,
         ai_model: document.getElementById('editCampaignAiModel')?.value || 'default',
         ai_provider: (document.getElementById('editCampaignAiModel')?.value || '').startsWith('gemini') ? 'gemini' : ((document.getElementById('editCampaignAiModel')?.value || '').startsWith('gpt') ? 'openai' : 'deepseek'),
         subtitle_enabled: document.getElementById('editCampaignSubtitleSwitch')?.checked ? 1 : 0,
+        disable_subtitle_for_shorts: document.getElementById('editCampaignDisableSubtitleForShorts')?.checked ? 1 : 0,
         subtitle_style: document.getElementById('editCampaignSubtitleStyle')?.value || 'karaoke_yellow',
+        subtitle_position: document.getElementById('editCampaignSubtitlePosition')?.value || 'center',
         add_part_label: document.getElementById('editCampaignAddPartLabelSwitch')?.checked ? 1 : 0,
         clips_per_video: clipsPerVid,
         speed_factor: document.getElementById('editCampaignSpeedSwitch')?.checked ? 1.03 : 1.0,
@@ -6274,6 +6428,22 @@ async function confirmDeleteStudioVideo(videoKey) {
 let activePlaybackType = 'auto'; // 'original' hoặc 'rendered'
 let activePlaybackPart = 1;
 
+function updateStudioShortFormVisibility(isShort) {
+    const clipsGroup = document.getElementById('studioClipsPerVideoGroup');
+    const partWrap = document.getElementById('studioAddPartLabelWrap');
+    const shortNotice = document.getElementById('studioShortNotice');
+
+    if (isShort) {
+        if (clipsGroup) clipsGroup.style.display = 'none';
+        if (partWrap) partWrap.style.display = 'none';
+        if (shortNotice) shortNotice.style.display = 'block';
+    } else {
+        if (clipsGroup) clipsGroup.style.display = 'block';
+        if (partWrap) partWrap.style.display = 'flex';
+        if (shortNotice) shortNotice.style.display = 'none';
+    }
+}
+
 function selectStudioVideo(videoId, playType = null, partNum = 1) {
     const v = cachedVideos.find(item => item.id == videoId || item.yt_video_id === videoId);
     if (!v) return;
@@ -6296,6 +6466,11 @@ function selectStudioVideo(videoId, playType = null, partNum = 1) {
     }
 
     renderStudioVideoList();
+
+    // Ẩn/hiện "Số clip cắt" và "Đóng dấu PART X" nếu là video short-form (<= 180s / 3 phút)
+    const durVal = parseFloat(v.duration) || 0;
+    const isShortForm = (durVal > 0 && durVal <= 180) || v.is_short === true || v.is_short === 1;
+    updateStudioShortFormVisibility(isShortForm);
 
     // Update active video info bar
     const titleEl = document.getElementById('studioActiveVideoTitle');
@@ -6349,6 +6524,14 @@ function selectStudioVideo(videoId, playType = null, partNum = 1) {
 
         if (playUrl) {
             source.src = playUrl;
+            player.onloadedmetadata = () => {
+                if (player.duration && isFinite(player.duration)) {
+                    if (!v.duration || v.duration === 0) {
+                        v.duration = Math.round(player.duration);
+                    }
+                    updateStudioShortFormVisibility(player.duration <= 180);
+                }
+            };
             player.load();
         } else {
             source.src = '';
@@ -6404,8 +6587,8 @@ function toggleStudioPlayback() {
 
 function handleCampaignClipsInputChange(mode, val) {
     let num = parseInt(val, 10);
-    const input = mode === 'new' 
-        ? document.getElementById('campaignClipsPerVideoInput') 
+    const input = mode === 'new'
+        ? document.getElementById('campaignClipsPerVideoInput')
         : document.getElementById('editCampaignClipsPerVideoInput');
     if (input && val !== '' && (isNaN(num) || num < 1)) {
         num = 1;
@@ -6423,6 +6606,8 @@ function handleCampaignClipsInputChange(mode, val) {
         ? document.getElementById('campaignAddPartLabelWrap')
         : document.getElementById('editCampaignAddPartLabelWrap');
 
+    const partTooltipHtml = ' <span class="has-tooltip tooltip-multiline" data-tooltip="Lưu ý: Chỉ áp dụng cắt Part và gắn chữ PART cho Video Dài (> 3 phút). YouTube Shorts (≤ 3 phút) sẽ luôn được render nguyên bản 1 video trọn vẹn và không chèn chữ PART." title="Lưu ý: Chỉ áp dụng cắt Part và gắn chữ PART cho Video Dài (> 3 phút). YouTube Shorts (≤ 3 phút) sẽ luôn được render nguyên bản 1 video trọn vẹn và không chèn chữ PART." style="cursor:help; display:inline-flex; align-items:center; margin-left:4px;"><i class="fa-solid fa-circle-info text-cyan" style="font-size:14px; opacity:0.95;"></i></span>';
+
     if (switchEl) {
         if (num <= 1) {
             switchEl.checked = false;
@@ -6432,7 +6617,7 @@ function handleCampaignClipsInputChange(mode, val) {
                 wrapEl.style.cursor = 'not-allowed';
             }
             if (textEl) {
-                textEl.innerHTML = '<i class="fa-solid fa-tag text-muted"></i> Đóng dấu chữ PART X (Tự động tắt vì chỉ cắt 1 clip)';
+                textEl.innerHTML = 'Đóng dấu chữ PART X (Tắt vì chỉ 1 clip)' + partTooltipHtml;
             }
         } else {
             switchEl.disabled = false;
@@ -6442,7 +6627,7 @@ function handleCampaignClipsInputChange(mode, val) {
                 wrapEl.style.cursor = 'pointer';
             }
             if (textEl) {
-                textEl.innerHTML = '<i class="fa-solid fa-tag text-cyan"></i> Đóng dấu chữ PART X trên video (Hiển thị / Ẩn chữ Part)';
+                textEl.innerHTML = 'Đóng dấu chữ PART X trên video' + partTooltipHtml;
             }
         }
     }
@@ -6478,11 +6663,13 @@ async function renderStudioActiveVideo(btn) {
         return;
     }
 
+    const durVal = parseFloat(activeStudioVideo?.duration) || 0;
+    const isShort = activeStudioVideo && ((durVal > 0 && durVal <= 180) || activeStudioVideo.is_short === true || activeStudioVideo.is_short === 1);
     const duration = parseInt(document.getElementById('studioDurationRange')?.value) || 65;
-    const clipsCount = parseInt(document.getElementById('studioClipsPerVideo')?.value) || 1;
+    const clipsCount = isShort ? 1 : (parseInt(document.getElementById('studioClipsPerVideo')?.value) || 1);
     const flip = document.getElementById('studioFlipHorizontal')?.checked ?? true;
     const speed = document.getElementById('studioSpeedFactor')?.checked ? 1.03 : 1.0;
-    const addPart = document.getElementById('studioAddPartLabel')?.checked ?? true;
+    const addPart = isShort ? false : (document.getElementById('studioAddPartLabel')?.checked ?? true);
     const genHook = document.getElementById('studioGenerateAiHook')?.checked ?? true;
     const selectedModel = document.getElementById('studioAiModelSelect')?.value || 'default';
     const enableSub = document.getElementById('studioEnableSubtitles')?.checked ?? true;
@@ -6758,6 +6945,83 @@ async function toggleMinimizeToTraySetting(checked) {
 // ============================================================
 // DOWNLOAD FILTER SETTINGS (GLOBAL DURATION LIMITS)
 // ============================================================
+function validateMinDurationInput(input) {
+    if (!input || input.disabled) return;
+    const minVal = parseInt(input.min, 10) || 0;
+    if (input.value !== '') {
+        const val = parseInt(input.value, 10);
+        if (isNaN(val) || val < minVal) {
+            input.value = minVal;
+            if (minVal > 0) {
+                showToast('⚠️ Thời lượng tối thiểu cho Video Dài không thể nhỏ hơn ' + minVal + ' giây!', true);
+            }
+        }
+    }
+}
+
+/**
+ * Shared helper: apply min/value/disabled state to a min-duration input
+ * based on whether Shorts checkbox is currently checked.
+ *   Shorts checked (both or shorts-only) → value=0, min=0, DISABLED
+ *   Only Longform checked                → min=180, value≥180, ENABLED
+ */
+function applyMinDurationState(shortsCb, longformCb, minInput, savedValue) {
+    if (!minInput) return;
+    const onlyLongform = (longformCb ? longformCb.checked : true) && !(shortsCb ? shortsCb.checked : true);
+    if (onlyLongform) {
+        minInput.disabled = false;
+        minInput.style.opacity = '';
+        minInput.style.cursor = '';
+        minInput.min = '180';
+        const mVal = (savedValue != null && savedValue >= 180) ? savedValue : 180;
+        minInput.value = mVal;
+    } else {
+        // Shorts is checked → lock to 0
+        minInput.disabled = true;
+        minInput.style.opacity = '0.45';
+        minInput.style.cursor = 'not-allowed';
+        minInput.min = '0';
+        minInput.value = 0;
+    }
+}
+
+/**
+ * Called when either Shorts or Longform checkbox changes.
+ * Rules:
+ *   - Both checked OR only Shorts checked → min duration = 0, input DISABLED
+ *   - Only Longform checked              → min duration = 180, input ENABLED
+ *   - Cannot uncheck both (re-checks the triggering checkbox)
+ */
+function onToggleFormatCheckbox(changedCb, shortsId, longformId, minInputId) {
+    if (!changedCb) return;
+    const shortsCb = document.getElementById(shortsId);
+    const longformCb = document.getElementById(longformId);
+    const minInput = document.getElementById(minInputId);
+    if (!shortsCb || !longformCb) return;
+
+    // Prevent unchecking both
+    if (!shortsCb.checked && !longformCb.checked) {
+        changedCb.checked = true;
+        showToast('⚠️ Phải chọn ít nhất một định dạng (Shorts hoặc Video Dài)!', true);
+        return;
+    }
+
+    // Preserve current value for longform-only case
+    const curVal = minInput ? parseInt(minInput.value, 10) : null;
+    applyMinDurationState(shortsCb, longformCb, minInput, isNaN(curVal) ? null : curVal);
+}
+
+// Legacy shim kept for any remaining HTML references
+function onToggleIncludeLongform(cb, inputId) {
+    const shortsId = inputId
+        .replace('settingMinVideoDuration', 'settingFilterIncludeShorts')
+        .replace('settingChannelMinDuration', 'settingChannelIncludeShorts')
+        .replace('campaignMinDurationInput', 'campaignIncludeShorts')
+        .replace('editCampaignMinDurationInput', 'editCampaignIncludeShorts');
+    const longformId = cb ? cb.id : '';
+    onToggleFormatCheckbox(cb, shortsId, longformId, inputId);
+}
+
 async function loadDownloadFilterSettings() {
     try {
         const res = await fetch('/api/settings/download-filter');
@@ -6765,28 +7029,41 @@ async function loadDownloadFilterSettings() {
         const data = await res.json();
         const minEl = document.getElementById('settingMinVideoDuration');
         const maxEl = document.getElementById('settingMaxVideoDuration');
-        if (minEl && data.min_video_duration != null) minEl.value = data.min_video_duration;
+        const shortsEl = document.getElementById('settingFilterIncludeShorts');
+        const longformEl = document.getElementById('settingFilterIncludeLongform');
+
+        if (shortsEl && data.include_shorts != null) shortsEl.checked = !!data.include_shorts;
+        if (longformEl && data.include_longform != null) longformEl.checked = !!data.include_longform;
+
+        applyMinDurationState(shortsEl, longformEl, minEl, data.min_video_duration ?? null);
         if (maxEl && data.max_video_duration != null) maxEl.value = data.max_video_duration;
     } catch (err) {
         console.error('Lỗi nạp cấu hình bộ lọc video:', err);
     }
 }
 
-async function saveDownloadFilterSettings() {
-    const minVal = parseInt(document.getElementById('settingMinVideoDuration')?.value || '300', 10);
+async function saveDownloadFilterSettings(silent = false) {
+    const minVal = parseInt(document.getElementById('settingMinVideoDuration')?.value || '0', 10);
     const maxVal = parseInt(document.getElementById('settingMaxVideoDuration')?.value || '3600', 10);
+    const includeShorts = document.getElementById('settingFilterIncludeShorts')?.checked ?? true;
+    const includeLongform = document.getElementById('settingFilterIncludeLongform')?.checked ?? true;
+
+    if (!includeShorts && !includeLongform) {
+        showToast('⚠️ Vui lòng chọn ít nhất một loại video: Shorts hoặc Video Dài!', true);
+        return false;
+    }
 
     if (isNaN(minVal) || minVal < 0) {
         showToast('⚠️ Thời lượng tối thiểu không hợp lệ!', true);
-        return;
+        return false;
     }
     if (isNaN(maxVal) || maxVal <= 0) {
         showToast('⚠️ Thời lượng tối đa không hợp lệ!', true);
-        return;
+        return false;
     }
     if (minVal >= maxVal) {
         showToast('⚠️ Thời lượng tối thiểu phải nhỏ hơn thời lượng tối đa!', true);
-        return;
+        return false;
     }
 
     try {
@@ -6795,17 +7072,27 @@ async function saveDownloadFilterSettings() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 min_video_duration: minVal,
-                max_video_duration: maxVal
+                max_video_duration: maxVal,
+                include_shorts: includeShorts,
+                include_longform: includeLongform
             })
         });
         const data = await res.json();
         if (data.status === 'success') {
-            showToast(`✅ Đã lưu bộ lọc thời lượng video: ${minVal}s - ${maxVal}s`);
+            if (!silent) {
+                const types = [];
+                if (includeShorts) types.push('Shorts (≤ 3p)');
+                if (includeLongform) types.push(`Video Dài (${minVal}s - ${maxVal}s)`);
+                showToast(`✅ Đã lưu bộ lọc video: ${types.join(' + ')}`);
+            }
+            return true;
         } else {
             showToast('Lỗi lưu bộ lọc: ' + (data.detail || 'Không thể lưu'), true);
+            return false;
         }
     } catch (err) {
         showToast('Lỗi kết nối khi lưu bộ lọc: ' + err.message, true);
+        return false;
     }
 }
 
@@ -7386,6 +7673,7 @@ async function testYoutubeKey(btn) {
 // ============================================================
 function openSchedulerSettingsModal() {
     loadSchedulerSettings();
+    loadDownloadFilterSettings();
     const modal = document.getElementById('schedulerSettingsModal');
     if (modal) {
         modal.style.display = 'flex';
@@ -7569,6 +7857,13 @@ async function saveSchedulerSettings(btn, fromModal = true) {
     if (isNaN(minAccountCooldown) || minAccountCooldown < 15 || minAccountCooldown > 1440) {
         showToast('Giãn cách an toàn giữa 2 lần đăng cùng nick phải từ 15 đến 1440 phút!', 'error');
         return;
+    }
+
+    if (fromModal) {
+        const filterSaved = await saveDownloadFilterSettings(true);
+        if (!filterSaved) {
+            return;
+        }
     }
 
     if (btn) {
@@ -9007,7 +9302,7 @@ function renderLocalTracksTable(tracks) {
                     </button>
                 </td>
                 <td class="text-center">
-                    <button type="button" class="btn btn-sm btn-danger has-tooltip"
+                    <button type="button" class="btn btn-sm btn-danger has-tooltip tooltip-side-left"
                         onclick="deleteAudioTrack('${escapeHtml(t.category)}', '${escapeHtml(t.filename)}')"
                         data-tooltip="Xóa file nhạc này">
                         <i class="fa-solid fa-trash-can"></i>
@@ -9063,7 +9358,7 @@ async function deleteAudioTrack(category, filename) {
 // Dừng hoàn toàn nghe thử
 function stopAudioPreview() {
     if (currentPreviewAudio) {
-        try { currentPreviewAudio.pause(); } catch (_) {}
+        try { currentPreviewAudio.pause(); } catch (_) { }
         currentPreviewAudio = null;
     }
 
@@ -9859,6 +10154,7 @@ function populateAllBgmSelects(categories) {
     if (chSel) {
         const val = chSel.value;
         chSel.innerHTML = makeOptions('-- Không Dùng Nhạc Nền --', val, false);
+        if (val) chSel.value = val;
     }
 
     // 2. Video Studio Recipe
@@ -9866,6 +10162,7 @@ function populateAllBgmSelects(categories) {
     if (stSel) {
         const val = stSel.value;
         stSel.innerHTML = makeOptions('-- Tắt / Không Dùng Nhạc Nền --', val, false);
+        if (val) stSel.value = val;
     }
 
     // 3. New Campaign Modal
@@ -9873,6 +10170,7 @@ function populateAllBgmSelects(categories) {
     if (newCampSel) {
         const val = newCampSel.value;
         newCampSel.innerHTML = makeOptions('-- Tắt / Không Dùng Nhạc Nền --', val, true);
+        if (val) newCampSel.value = val;
     }
 
     // 4. Edit Campaign Modal
@@ -9880,6 +10178,7 @@ function populateAllBgmSelects(categories) {
     if (editCampSel) {
         const val = editCampSel.value;
         editCampSel.innerHTML = makeOptions('-- Tắt / Không Dùng Nhạc Nền --', val, true);
+        if (val) editCampSel.value = val;
     }
 }
 
@@ -9898,9 +10197,15 @@ async function populateChannelBgmSelect(selectedFolder, selectedVolume) {
             if (data.status === 'success') cachedAudioCategories = data.categories || [];
         }
 
-        populateAllBgmSelects(cachedAudioCategories);
-        if (select && selectedFolder) {
-            select.value = selectedFolder;
+        if (select) {
+            const targetVal = selectedFolder || '';
+            let html = `<option value="">-- Không Dùng Nhạc Nền --</option>`;
+            cachedAudioCategories.forEach(c => {
+                const isSel = (c.id === targetVal) ? 'selected' : '';
+                html += `<option value="${escapeHtml(c.id)}" ${isSel}>${escapeHtml(c.display_name || c.name)} (${c.track_count || 0} bài)</option>`;
+            });
+            select.innerHTML = html;
+            select.value = targetVal;
         }
     } catch (err) {
         console.error('Lỗi populate BGM categories cho kênh:', err);

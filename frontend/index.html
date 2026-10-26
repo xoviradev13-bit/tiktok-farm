@@ -1510,7 +1510,7 @@
                                         Đạt chuẩn > 1 phút để vào Quỹ Tác Giả TikTok (Creator Rewards Program)</small>
                                 </div>
 
-                                <div class="form-group" style="margin-top:0;">
+                                <div class="form-group" id="studioClipsPerVideoGroup" style="margin-top:0;">
                                     <label><i class="fa-solid fa-scissors text-cyan"></i> Số Clip Cắt Mỗi Video:</label>
                                     <select id="studioClipsPerVideo" class="input-field"
                                         onchange="handleStudioClipsPerVideoChange(this.value)">
@@ -1523,6 +1523,21 @@
                                     </select>
                                     <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Số lượng
                                         clip ngắn cắt & xuất ra từ 1 video gốc.</small>
+                                </div>
+
+                                <!-- Thông báo tự động nhận diện YouTube Shorts (≤ 3 phút) -->
+                                <div id="studioShortNotice"
+                                    style="display:none; padding:10px 12px; background:rgba(0,242,254,0.06); border:1px solid rgba(0,242,254,0.22); border-radius:8px; font-size:12px; color:var(--text-secondary); margin-top:6px; margin-bottom:10px;">
+                                    <div
+                                        style="font-weight:600; color:#38bdf8; display:flex; align-items:center; gap:6px;">
+                                        <i class="fa-brands fa-youtube text-danger" style="font-size:14px;"></i> Định
+                                        Dạng: YouTube Shorts (≤ 3 Phút)
+                                    </div>
+                                    <div
+                                        style="font-size:11px; color:var(--text-muted); margin-top:3px; line-height:1.4;">
+                                        Tự động render 1 video trọn vẹn nguyên bản, không cắt Part và không đóng dấu chữ
+                                        PART.
+                                    </div>
                                 </div>
 
                                 <!-- Anti-fingerprint Switches -->
@@ -1776,8 +1791,10 @@
                     <div class="panel-header">
                         <h3><i class="fa-solid fa-table-list"></i> Bảng Lịch Sử & Chi Tiết Tác Vụ</h3>
                         <div style="display:flex; gap:8px;">
-                            <button class="btn btn-sm btn-primary" onclick="triggerProcessUploads()"><i class="fa-solid fa-paper-plane"></i> Đăng Ngay Hàng Đợi</button>
-                            <button class="btn btn-sm btn-secondary" onclick="loadPipelineStatus()"><i class="fa-solid fa-rotate"></i> Cập Nhật</button>
+                            <button class="btn btn-sm btn-primary" onclick="triggerProcessUploads()"><i
+                                    class="fa-solid fa-paper-plane"></i> Đăng Ngay Hàng Đợi</button>
+                            <button class="btn btn-sm btn-secondary" onclick="loadPipelineStatus()"><i
+                                    class="fa-solid fa-rotate"></i> Cập Nhật</button>
                         </div>
                     </div>
                     <div class="table-responsive mt-3">
@@ -2599,48 +2616,6 @@
                         </div>
                         <hr class="settings-divider">
 
-                        <!-- Download Filter Settings -->
-                        <div class="settings-section">
-                            <div class="settings-section-header"
-                                style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                                <div style="display:flex; align-items:center; gap:12px;">
-                                    <i class="fa-solid fa-filter" style="color:#f59e0b; font-size:24px;"></i>
-                                    <div>
-                                        <h4 style="margin:0; font-size:16px;">Bộ Lọc Tải Video YouTube (Toàn Cục)</h4>
-                                        <p class="panel-sub" style="margin:2px 0 0 0;">Giới hạn thời lượng video tải về.
-                                            Áp dụng làm mặc định cho tất cả kênh và chiến dịch (chiến dịch có thể ghi đè
-                                            riêng).</p>
-                                    </div>
-                                </div>
-                                <button type="button" class="btn btn-primary btn-sm"
-                                    onclick="saveDownloadFilterSettings()">
-                                    <i class="fa-solid fa-floppy-disk"></i> Lưu Bộ Lọc
-                                </button>
-                            </div>
-                            <div class="modal-form-grid mt-3" style="grid-template-columns: 1fr 1fr; gap:16px;">
-                                <div class="form-group">
-                                    <label style="font-size:12px; font-weight:600;"><i
-                                            class="fa-solid fa-clock-rotate-left" style="color:#f59e0b;"></i> Thời Lượng
-                                        Tối Thiểu (giây):</label>
-                                    <input type="number" id="settingMinVideoDuration" class="input-field mt-1"
-                                        value="300" min="10" max="3600" placeholder="300">
-                                    <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Bỏ qua các
-                                        video ngắn hơn mức này. Mặc định: 300s (5 phút).</small>
-                                </div>
-                                <div class="form-group">
-                                    <label style="font-size:12px; font-weight:600;"><i class="fa-solid fa-hourglass-end"
-                                            style="color:#ef4444;"></i> Thời Lượng Tối Đa (giây):</label>
-                                    <input type="number" id="settingMaxVideoDuration" class="input-field mt-1"
-                                        value="3600" min="60" max="14400" placeholder="3600">
-                                    <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Bỏ qua
-                                        video dài (phim, livestream...) để tránh render quá tải. Mặc định: 3600s (1
-                                        giờ).</small>
-                                </div>
-                            </div>
-                        </div>
-
-                        <hr class="settings-divider">
-
                         <!-- Telegram -->
                         <div class="settings-section">
                             <div class="settings-section-header"
@@ -2757,134 +2732,6 @@
 
                         <hr class="settings-divider">
 
-                        <!-- Cấu Hình Tự Động & Scheduler Nâng Cao -->
-                        <div class="settings-section">
-                            <div class="settings-section-header">
-                                <i class="fa-solid fa-sliders" style="color:var(--accent-cyan);"></i>
-                                <div>
-                                    <h4>Cấu Hình Tự Động Quét & Vận Hành Ngầm</h4>
-                                    <p class="panel-sub">Tùy chỉnh chu kỳ tự động quét RSS kênh YouTube, kiểm tra lịch
-                                        đăng
-                                        và an toàn rate-limit.</p>
-                                </div>
-                            </div>
-                            <div class="modal-form-grid mt-3">
-                                <div class="form-group">
-                                    <label><i class="fa-solid fa-clock"></i> Chu Kỳ Quét RSS YouTube (Phút):</label>
-                                    <div style="display:flex; gap:8px; align-items:center;">
-                                        <input type="number" id="settingSchedulerInterval" class="input-field" min="1"
-                                            max="1440" value="15"
-                                            style="width:120px; font-weight:700; color:var(--accent-cyan);">
-                                        <span style="font-size:13px; color:var(--text-muted);">phút/lần</span>
-                                    </div>
-                                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
-                                        <button type="button" class="btn btn-xs btn-secondary has-tooltip"
-                                            onclick="setSchedulerPreset(5, false)"
-                                            data-tooltip="Đặt chu kỳ quét 5 phút (Rất nhanh)">5p</button>
-                                        <button type="button" class="btn btn-xs btn-secondary has-tooltip"
-                                            onclick="setSchedulerPreset(10, false)"
-                                            data-tooltip="Đặt chu kỳ quét 10 phút">10p</button>
-                                        <button type="button" class="btn btn-xs btn-primary has-tooltip"
-                                            onclick="setSchedulerPreset(15, false)"
-                                            data-tooltip="Đặt chu kỳ quét 15 phút (Chuẩn khuyến nghị)">15p
-                                            (Chuẩn)</button>
-                                        <button type="button" class="btn btn-xs btn-secondary has-tooltip"
-                                            onclick="setSchedulerPreset(30, false)"
-                                            data-tooltip="Đặt chu kỳ quét 30 phút">30p</button>
-                                        <button type="button" class="btn btn-xs btn-secondary has-tooltip"
-                                            onclick="setSchedulerPreset(60, false)"
-                                            data-tooltip="Đặt chu kỳ quét 60 phút (Tiết kiệm)">60p</button>
-                                    </div>
-                                    <small class="form-hint">Khoảng thời gian ngầm kiểm tra video mới từ danh sách kênh
-                                        đang
-                                        theo dõi.</small>
-                                </div>
-                                <div class="form-group">
-                                    <label><i class="fa-solid fa-list-check"></i> Kiểm Tra Hàng Đợi Upload
-                                        (Giây):</label>
-                                    <div style="display:flex; gap:8px; align-items:center;">
-                                        <input type="number" id="settingUploadInterval" class="input-field" min="10"
-                                            max="3600" value="60" style="width:120px;">
-                                        <span style="font-size:13px; color:var(--text-muted);">giây/lần</span>
-                                    </div>
-                                    <small class="form-hint">Tần suất kiểm tra task đăng TikTok đến giờ hẹn trong hàng
-                                        đợi
-                                        (Mặc định: 60s).</small>
-                                </div>
-                                <div class="form-group">
-                                    <label><i class="fa-solid fa-cloud-arrow-down"></i> Giới Hạn Video Mới / Kênh Mỗi
-                                        Lần
-                                        Quét:</label>
-                                    <div style="display:flex; gap:8px; align-items:center;">
-                                        <input type="number" id="settingMaxVideosPerScan" class="input-field" min="1"
-                                            max="50" value="5" style="width:120px;">
-                                        <span style="font-size:13px; color:var(--text-muted);">video</span>
-                                    </div>
-                                    <small class="form-hint">Số video mới tối đa tải về mỗi kênh trong 1 chu kỳ để kiểm
-                                        soát
-                                        dung lượng ổ đĩa.</small>
-                                </div>
-                                <div class="form-group">
-                                    <label><i class="fa-solid fa-shield-halved"></i> Giãn Cách Giữa Các Kênh
-                                        (Giây):</label>
-                                    <div style="display:flex; gap:8px; align-items:center;">
-                                        <input type="number" id="settingChannelDelay" class="input-field" min="0"
-                                            max="30" value="2" style="width:120px;">
-                                        <span style="font-size:13px; color:var(--text-muted);">giây</span>
-                                    </div>
-                                    <small class="form-hint">Độ trễ nghỉ giữa các request kiểm tra RSS để tránh bị
-                                        YouTube
-                                        rate-limit IP.</small>
-                                </div>
-                                <div class="form-group">
-                                    <label><i class="fa-solid fa-hourglass-half" style="color:#10b981;"></i> Giãn Cách An Toàn Đăng Bài (Phút):</label>
-                                    <div style="display:flex; gap:8px; align-items:center;">
-                                        <input type="number" id="settingMinAccountCooldown" class="input-field" min="15"
-                                            max="1440" value="60" style="width:120px; font-weight:600; color:#10b981;">
-                                        <span style="font-size:13px; color:var(--text-muted);">phút/clip</span>
-                                    </div>
-                                    <small class="form-hint">Khoảng cách an toàn tối thiểu giữa các lần đăng trên cùng 1 tài khoản (mặc định: 60 phút).</small>
-                                </div>
-                            </div>
-
-                            <div class="channel-quick-actions-bar mt-3"
-                                style="display:flex; gap:20px; align-items:center; flex-wrap:wrap; padding:12px 16px; background:rgba(255,255,255,0.02); border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
-                                <label
-                                    style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:13px; margin:0;">
-                                    <label class="switch">
-                                        <input type="checkbox" id="settingAutoDownloadToggle" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                    <span><strong style="color:#fff;">Tự Động Tải MP4</strong> <span
-                                            style="color:var(--text-muted); font-size:12px;">(Kéo video mới về máy ngay
-                                            khi
-                                            phát hiện)</span></span>
-                                </label>
-                                <label
-                                    style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:13px; margin:0;">
-                                    <label class="switch">
-                                        <input type="checkbox" id="settingAutoRenderToggle" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                    <span><strong style="color:#fff;">Tự Động Render 9:16</strong> <span
-                                            style="color:var(--text-muted); font-size:12px;">(Chuyển tiếp vào pipeline
-                                            AI
-                                            Transformer)</span></span>
-                                </label>
-                                <label
-                                    style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:13px; margin:0;">
-                                    <label class="switch">
-                                        <input type="checkbox" id="settingSaveByChannelFolderToggle">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <span><strong style="color:#fff;">Lưu Thư Mục Riêng Từng Kênh</strong> <span
-                                            style="color:var(--text-muted); font-size:12px;">(Tự tạo thư mục theo tên kênh khi tải và render)</span></span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <hr class="settings-divider">
-
                         <!-- Chính Sách Tự Động Dọn Dẹp File Video (Auto Disk Cleanup) -->
                         <div class="settings-section">
                             <div class="settings-section-header">
@@ -2995,7 +2842,7 @@
                                     <h4>Khởi Động Cùng Windows & Khay Hệ Thống (System Tray)</h4>
                                     <p class="panel-sub">Tự động khởi động ngầm khi bật máy tính và thu nhỏ xuống khay
                                         hệ
-                                        thống cạnh đồng hồ.</p>
+                                        thống.</p>
                                 </div>
                             </div>
 
@@ -3012,7 +2859,7 @@
                                         <strong style="color:#fff;">Khởi động cùng Windows</strong>
                                         <span
                                             style="color:var(--text-muted); font-size:12px; display:block; margin-top:2px;">(Tự
-                                            động mở ứng dụng ngầm khi bật máy tính mà không hiện bảng đen)</span>
+                                            động mở ứng dụng ngầm khi bật máy tính)</span>
                                     </span>
                                 </label>
 
@@ -3269,7 +3116,8 @@
                             60 phút (1 giờ)
                         </button>
                     </div>
-                    <small class="form-hint" style="margin-top:6px; margin-bottom:0;">Hệ thống sẽ chạy ngầm kiểm tra XML RSS của YouTube
+                    <small class="form-hint" style="margin-top:6px; margin-bottom:0;">Hệ thống sẽ chạy ngầm kiểm tra XML
+                        RSS của YouTube
                         mỗi chu kỳ được chọn. Thay đổi có hiệu lực ngay lập tức.</small>
                 </div>
 
@@ -3310,13 +3158,78 @@
                     </div>
 
                     <div class="form-group full-width">
-                        <label><i class="fa-solid fa-hourglass-half text-green" style="color:#10b981;"></i> Giãn Cách An Toàn Giữa Các Lần Đăng (Cùng Nick - Toàn Cục):</label>
+                        <label><i class="fa-solid fa-hourglass-half text-green" style="color:#10b981;"></i> Giãn Cách An
+                            Toàn Giữa Các Lần Đăng (Cùng Nick - Toàn Cục):</label>
                         <div style="display:flex; gap:8px; align-items:center;">
-                            <input type="number" id="modalMinAccountCooldown" class="input-field" min="15" max="1440" value="60"
-                                style="width:130px; font-weight:600; color:#10b981;">
-                            <span style="font-size:12px; color:var(--text-muted);">phút (mặc định: 60p, chống TikTok shadowban/flag spam)</span>
+                            <input type="number" id="modalMinAccountCooldown" class="input-field" min="15" max="1440"
+                                value="60" style="width:130px; font-weight:600; color:#10b981;">
+                            <span style="font-size:12px; color:var(--text-muted);">phút (mặc định: 60p, chống TikTok
+                                shadowban/flag spam)</span>
                         </div>
-                        <small class="form-hint">Khoảng cách tối thiểu giữa 2 lần đăng bài trên cùng 1 tài khoản TikTok. Nếu chiến dịch không chỉ định riêng, hệ thống sẽ tự động dùng mốc toàn cục này.</small>
+                        <small class="form-hint">Khoảng cách tối thiểu giữa 2 lần đăng bài trên cùng 1 tài khoản TikTok.
+                            Nếu chiến dịch không chỉ định riêng, hệ thống sẽ tự động dùng mốc toàn cục này.</small>
+                    </div>
+                </div>
+
+                <hr class="settings-divider" style="margin: 14px 0;">
+
+                <!-- Download Filter Settings (Toàn Cục) -->
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <i class="fa-solid fa-filter" style="color:#f59e0b; font-size:15px;"></i>
+                            <span style="font-weight:700; font-size:13px; color:#fff;">Bộ Lọc Tải Video YouTube</span>
+                        </div>
+                    </div>
+                    <p class="panel-sub" style="margin:0 0 10px 0; font-size:11.5px;">Lựa chọn loại video (Shorts /
+                        Video Dài) và giới hạn thời lượng tải về tự động cho toàn hệ thống.</p>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <label
+                            style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:9px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="settingFilterIncludeShorts" checked
+                                onchange="onToggleFormatCheckbox(this,'settingFilterIncludeShorts','settingFilterIncludeLongform','settingMinVideoDuration')"
+                                style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                            <div>
+                                <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                        class="fa-brands fa-youtube" style="color:#ef4444;"></i> Shorts (≤ 3 phút /
+                                    180s)</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">Xuất 1 clip full,
+                                    không cắt PART.</div>
+                            </div>
+                        </label>
+                        <label
+                            style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:9px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="settingFilterIncludeLongform" checked
+                                onchange="onToggleFormatCheckbox(this,'settingFilterIncludeShorts','settingFilterIncludeLongform','settingMinVideoDuration')"
+                                style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                            <div>
+                                <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                        class="fa-solid fa-film" style="color:#38bdf8;"></i> Video Dài (> 3 phút)</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">Cắt Part kèm gắn
+                                    nhãn PART X.</div>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="modal-form-grid" style="grid-template-columns: 1fr 1fr; gap:12px; margin-top:10px;">
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:11.5px; font-weight:600;"><i class="fa-solid fa-clock-rotate-left"
+                                    style="color:#f59e0b;"></i> Min Video Dài (giây):</label>
+                            <input type="number" id="settingMinVideoDuration" class="input-field mt-1" value="0" min="0"
+                                max="14400" placeholder="0" onchange="validateMinDurationInput(this)"
+                                onblur="validateMinDurationInput(this)">
+                            <small class="form-hint" style="font-size:10.5px;">Tối thiểu 180s (3 phút). Shorts luôn tải
+                                nếu bật ở trên.</small>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:11.5px; font-weight:600;"><i class="fa-solid fa-hourglass-end"
+                                    style="color:#ef4444;"></i> Max Thời Lượng (giây):</label>
+                            <input type="number" id="settingMaxVideoDuration" class="input-field mt-1" value="3600"
+                                min="60" max="14400" placeholder="3600">
+                            <small class="form-hint" style="font-size:10.5px;">Bỏ qua video dài quá mức này. Mặc định:
+                                3600s (1 giờ).</small>
+                        </div>
                     </div>
                 </div>
 
@@ -3355,9 +3268,12 @@
                     <label
                         style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid rgba(255,255,255,0.06); cursor:pointer;">
                         <div>
-                            <div style="font-weight:600; font-size:13px; color:#fff;"><i class="fa-solid fa-folder-tree text-cyan"></i> Lưu Video Theo Thư Mục Riêng Từng Kênh
+                            <div style="font-weight:600; font-size:13px; color:#fff;"><i
+                                    class="fa-solid fa-folder-tree text-cyan"></i> Lưu Video Theo Thư Mục Riêng Từng
+                                Kênh
                             </div>
-                            <div style="font-size:11px; color:var(--text-muted);">Tự động gom video tải về và video render vào thư mục con theo tên từng kênh</div>
+                            <div style="font-size:11px; color:var(--text-muted);">Tự động gom video tải về và video
+                                render vào thư mục con theo tên từng kênh</div>
                         </div>
                         <label class="switch" style="margin-left:14px;">
                             <input type="checkbox" id="modalSaveByChannelFolderToggle">
@@ -3371,8 +3287,12 @@
                     <label
                         style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid rgba(255,255,255,0.06); cursor:pointer;">
                         <div>
-                            <div style="font-weight:600; font-size:13px; color:#fff;"><i class="fa-solid fa-arrows-rotate text-emerald"></i> Tự Động Thử Lại Thông Minh (Smart Auto-Retry)</div>
-                            <div style="font-size:11px; color:var(--text-muted);">Tự động xếp lịch thử lại khi gặp lỗi tạm thời (mạng, proxy, browser timeout, kết nối GPM). An toàn: không thử lại khi vi phạm, captcha hoặc văng phiên.</div>
+                            <div style="font-weight:600; font-size:13px; color:#fff;"><i
+                                    class="fa-solid fa-arrows-rotate text-emerald"></i> Tự Động Thử Lại Thông Minh
+                                (Smart Auto-Retry)</div>
+                            <div style="font-size:11px; color:var(--text-muted);">Tự động xếp lịch thử lại khi gặp lỗi
+                                tạm thời (mạng, proxy, browser timeout, kết nối GPM). An toàn: không thử lại khi vi
+                                phạm, captcha hoặc văng phiên.</div>
                         </div>
                         <label class="switch" style="margin-left:14px;">
                             <input type="checkbox" id="modalAutoRetryToggle" checked>
@@ -3382,10 +3302,11 @@
 
                     <div class="modal-form-grid" style="margin-top: 4px;">
                         <div class="form-group">
-                            <label><i class="fa-solid fa-arrow-rotate-right text-emerald"></i> Số Lần Thử Lại Tối Đa:</label>
+                            <label><i class="fa-solid fa-arrow-rotate-right text-emerald"></i> Số Lần Thử Lại Tối
+                                Đa:</label>
                             <div style="display:flex; gap:8px; align-items:center;">
-                                <input type="number" id="modalMaxRetries" class="input-field" min="1" max="10"
-                                    value="2" style="font-weight:600;">
+                                <input type="number" id="modalMaxRetries" class="input-field" min="1" max="10" value="2"
+                                    style="font-weight:600;">
                                 <span style="font-size:12px; color:var(--text-muted);">lần</span>
                             </div>
                             <small class="form-hint">Thử lại tối đa số lần này trước khi đánh dấu thất bại hẳn.</small>
@@ -3398,15 +3319,20 @@
                                     value="15" style="font-weight:600;">
                                 <span style="font-size:12px; color:var(--text-muted);">phút</span>
                             </div>
-                            <small class="form-hint">Khoảng thời gian chờ trước lần thử kế tiếp (ví dụ: 15 phút).</small>
+                            <small class="form-hint">Khoảng thời gian chờ trước lần thử kế tiếp (ví dụ: 15
+                                phút).</small>
                         </div>
                     </div>
 
                     <label
                         style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid rgba(255,255,255,0.06); cursor:pointer; margin-top: 6px;">
                         <div>
-                            <div style="font-weight:600; font-size:13px; color:#fff;"><i class="fa-solid fa-shield-dog text-gold"></i> Watchdog Chống Treo Task (Stuck Recovery)</div>
-                            <div style="font-size:11px; color:var(--text-muted);">Tự động giải phóng profile và phục hồi các task bị dở dang (processing) khi khởi động lại máy hoặc treo quá thời gian cho phép.</div>
+                            <div style="font-weight:600; font-size:13px; color:#fff;"><i
+                                    class="fa-solid fa-shield-dog text-gold"></i> Watchdog Chống Treo Task (Stuck
+                                Recovery)</div>
+                            <div style="font-size:11px; color:var(--text-muted);">Tự động giải phóng profile và phục hồi
+                                các task bị dở dang (processing) khi khởi động lại máy hoặc treo quá thời gian cho phép.
+                            </div>
                         </div>
                         <label class="switch" style="margin-left:14px;">
                             <input type="checkbox" id="modalWatchdogToggle" checked>
@@ -3415,13 +3341,15 @@
                     </label>
 
                     <div class="form-group" style="margin-top: 4px;">
-                        <label><i class="fa-solid fa-stopwatch text-gold"></i> Thời Gian Coi Là Bị Treo (Timeout):</label>
+                        <label><i class="fa-solid fa-stopwatch text-gold"></i> Thời Gian Coi Là Bị Treo
+                            (Timeout):</label>
                         <div style="display:flex; gap:8px; align-items:center;">
-                            <input type="number" id="modalStuckTimeout" class="input-field" min="5" max="180"
-                                value="15" style="width:130px; font-weight:600;">
+                            <input type="number" id="modalStuckTimeout" class="input-field" min="5" max="180" value="15"
+                                style="width:130px; font-weight:600;">
                             <span style="font-size:12px; color:var(--text-muted);">phút (mặc định: 15 phút)</span>
                         </div>
-                        <small class="form-hint">Nếu task ở trạng thái processing quá thời gian này, Watchdog sẽ tự động can thiệp.</small>
+                        <small class="form-hint">Nếu task ở trạng thái processing quá thời gian này, Watchdog sẽ tự động
+                            can thiệp.</small>
                     </div>
                 </div>
             </div>
@@ -3744,6 +3672,116 @@
                         <small class="form-hint">Khuyến nghị: 10% - 15% để giọng nói/thuyết minh luôn rõ nét.</small>
                     </div>
 
+                    <!-- Download Format & Duration Filter per Channel -->
+                    <div class="form-group full-width"
+                        style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px; margin-top: 6px;">
+                        <label style="font-size:13px; font-weight:700;"><i class="fa-solid fa-filter text-gold"></i> Bộ
+                            Lọc Định Dạng & Thời Lượng Tải Riêng Cho Kênh:</label>
+                        <p class="form-hint" style="margin-top:2px; font-size:11px;">Cài đặt riêng cho kênh này (ưu tiên
+                            cao nhất: Kênh &rarr; Chiến dịch &rarr; Toàn cục).</p>
+
+                        <div
+                            style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin-top:10px;">
+                            <label
+                                style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                                <input type="checkbox" id="settingChannelIncludeShorts" checked
+                                    onchange="onToggleFormatCheckbox(this,'settingChannelIncludeShorts','settingChannelIncludeLongform','settingChannelMinDuration')"
+                                    style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                                <div>
+                                    <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                            class="fa-brands fa-youtube text-danger"></i> Tải YouTube Shorts (≤ 3p)
+                                    </div>
+                                    <div style="font-size:11px; color:var(--text-muted);">Xuất 1 clip full, không chèn
+                                        chữ Part</div>
+                                </div>
+                            </label>
+                            <label
+                                style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                                <input type="checkbox" id="settingChannelIncludeLongform" checked
+                                    onchange="onToggleFormatCheckbox(this,'settingChannelIncludeShorts','settingChannelIncludeLongform','settingChannelMinDuration')"
+                                    style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                                <div>
+                                    <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                            class="fa-solid fa-film text-cyan"></i> Tải Video Dài (> 3p)</div>
+                                    <div style="font-size:11px; color:var(--text-muted);">Áp dụng giới hạn thời lượng
+                                        bên dưới</div>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div class="modal-form-grid mt-2" style="grid-template-columns: 1fr 1fr; gap:12px;">
+                            <div>
+                                <label style="font-size:12px; font-weight:600;"><i class="fa-solid fa-clock-rotate-left"
+                                        style="color:#f59e0b;"></i> Thời lượng tải tối thiểu (giây):</label>
+                                <input type="number" id="settingChannelMinDuration" class="input-field mt-1" value="0"
+                                    placeholder="0" min="0" max="14400" onchange="validateMinDurationInput(this)"
+                                    onblur="validateMinDurationInput(this)" style="width:100%; height:40px;">
+                                <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Chỉ áp dụng
+                                    cho video dài (Tối thiểu 180s / 3 phút)</small>
+                            </div>
+                            <div>
+                                <label style="font-size:12px; font-weight:600;"><i class="fa-solid fa-hourglass-end"
+                                        style="color:#ef4444;"></i> Thời lượng tải tối đa (giây):</label>
+                                <input type="number" id="settingChannelMaxDuration" class="input-field mt-1"
+                                    placeholder="Để trống = theo chiến dịch/toàn cục" max="14400"
+                                    style="width:100%; height:40px;">
+                                <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Bỏ qua video
+                                    quá dài (tránh render lâu)</small>
+                            </div>
+                        </div>
+
+                        <!-- Phụ đề AI Section Cho Kênh Nguồn -->
+                        <div class="p-3 mt-3"
+                            style="background:rgba(0,0,0,0.25); border-radius:var(--radius-sm); border:1px solid rgba(255,255,255,0.06);">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label
+                                    style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#fff; cursor:pointer; margin:0;">
+                                    <input type="checkbox" id="settingChannelSubtitleSwitch" checked
+                                        onchange="document.getElementById('settingChannelSubtitleSettingsWrap').style.display = this.checked ? '' : 'none'; if(this.checked){ document.getElementById('settingChannelDisableSubtitleForShorts').checked=true; } else { document.getElementById('settingChannelDisableSubtitleForShorts').checked=false; }">
+                                    <span><i class="fa-solid fa-closed-captioning"
+                                            style="color:var(--accent-gold);"></i> Tự Động Nhận Diện &amp; Tạo Phụ Đề AI
+                                        (Faster-Whisper)</span>
+                                </label>
+                                <span class="badge badge-gold" style="font-size:10px;">Tăng Retention</span>
+                            </div>
+                            <div id="settingChannelSubtitleSettingsWrap">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px;">
+                                    <div>
+                                        <label style="font-size:11.5px; color:var(--text-secondary);">Phong cách chữ phụ
+                                            đề:</label>
+                                        <select id="settingChannelSubtitleStyle" class="custom-select mt-1"
+                                            style="width:100%; height:40px;">
+                                            <option value="inherit">Theo cài đặt Chiến dịch / Toàn cục</option>
+                                            <option value="karaoke_yellow">Highlight Chữ Vàng Neon (Từng Từ)</option>
+                                            <option value="classic_white">Trắng Viền Đen Bold (Cổ điển)</option>
+                                            <option value="tiktok_gradient">Gradient Cyan &amp; Hồng (TikTok Aesthetic)
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-size:11.5px; color:var(--text-secondary);">Vị trí hiển thị
+                                            chữ:</label>
+                                        <select id="settingChannelSubtitlePosition" class="custom-select mt-1"
+                                            style="width:100%; height:40px;">
+                                            <option value="inherit">Theo cài đặt Chiến dịch / Toàn cục</option>
+                                            <option value="center">Chính Giữa Màn Hình (Focus)</option>
+                                            <option value="bottom">Gần Đáy Màn Hình (Sát phần mô tả)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-2"
+                                    style="border-top:1px dashed rgba(255,255,255,0.08); padding-top:8px;">
+                                    <label
+                                        style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); cursor:pointer; user-select:none;">
+                                        <input type="checkbox" id="settingChannelDisableSubtitleForShorts" checked
+                                            style="width:15px; height:15px; accent-color:#f59e0b; cursor:pointer;">
+                                        <span>Tắt phụ đề cho Shorts (Hầu hết Shorts đã có sẵn phụ đề)</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="form-group full-width settings-toggles-card">
                         <div class="toggle-item">
                             <div class="toggle-info">
@@ -4019,16 +4057,48 @@
                                 </div>
                             </div>
 
-                            <div class="modal-form-grid mt-3" style="grid-template-columns: 1fr 1fr; gap:12px;">
+                            <!-- Lựa chọn định dạng tải: Shorts / Video Dài -->
+                            <div
+                                style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin-top:12px;">
+                                <label
+                                    style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                                    <input type="checkbox" id="campaignIncludeShorts" checked
+                                        onchange="onToggleFormatCheckbox(this,'campaignIncludeShorts','campaignIncludeLongform','campaignMinDurationInput')"
+                                        style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                                    <div>
+                                        <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                                class="fa-brands fa-youtube text-danger"></i> Tải YouTube Shorts (≤ 3p)
+                                        </div>
+                                        <div style="font-size:11px; color:var(--text-muted);">Xuất 1 clip full, không
+                                            chèn chữ Part</div>
+                                    </div>
+                                </label>
+                                <label
+                                    style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                                    <input type="checkbox" id="campaignIncludeLongform" checked
+                                        onchange="onToggleFormatCheckbox(this,'campaignIncludeShorts','campaignIncludeLongform','campaignMinDurationInput')"
+                                        style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                                    <div>
+                                        <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                                class="fa-solid fa-film text-cyan"></i> Tải Video Dài (> 3p)</div>
+                                        <div style="font-size:11px; color:var(--text-muted);">Áp dụng giới hạn thời
+                                            lượng bên dưới</div>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="modal-form-grid mt-2" style="grid-template-columns: 1fr 1fr; gap:12px;">
                                 <div>
                                     <label style="font-size:12px; font-weight:600;"><i
                                             class="fa-solid fa-clock-rotate-left" style="color:#f59e0b;"></i> Thời lượng
                                         tải tối thiểu (giây):</label>
                                     <input type="number" id="campaignMinDurationInput" class="input-field mt-1"
-                                        placeholder="Để trống = dùng chung (300s / 5p)" min="10"
-                                        style="width:100%; height:40px;">
-                                    <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Bỏ qua
-                                        video gốc ngắn hơn mức này</small>
+                                        value="0" placeholder="0" min="0" max="14400"
+                                        onchange="validateMinDurationInput(this)"
+                                        onblur="validateMinDurationInput(this)" style="width:100%; height:40px;">
+                                    <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Chỉ áp
+                                        dụng
+                                        cho video dài (Tối thiểu 180s / 3 phút)</small>
                                 </div>
                                 <div>
                                     <label style="font-size:12px; font-weight:600;"><i class="fa-solid fa-hourglass-end"
@@ -4065,36 +4135,56 @@
                                 style="background:rgba(0,0,0,0.25); border-radius:var(--radius-sm); border:1px solid rgba(255,255,255,0.06);">
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
                                     <label
-                                        style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#fff; cursor:pointer;">
-                                        <input type="checkbox" id="campaignSubtitleSwitch" checked>
+                                        style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#fff; cursor:pointer; margin:0;">
+                                        <input type="checkbox" id="campaignSubtitleSwitch" checked
+                                            onchange="document.getElementById('campaignSubtitleSettingsWrap').style.display = this.checked ? '' : 'none'; if(this.checked){ document.getElementById('campaignDisableSubtitleForShorts').checked=true; } else { document.getElementById('campaignDisableSubtitleForShorts').checked=false; }">
                                         <span><i class="fa-solid fa-closed-captioning"
-                                                style="color:var(--accent-gold);"></i> Tự Động Nhận Diện & Tạo Phụ Đề AI
+                                                style="color:var(--accent-gold);"></i> Tự Động Nhận Diện &amp; Tạo Phụ
+                                            Đề AI
                                             (Faster-Whisper)</span>
                                     </label>
                                     <span class="badge badge-gold" style="font-size:10px;">Tăng Retention</span>
                                 </div>
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px;"
-                                    id="subtitleSettingsWrap">
-                                    <div>
-                                        <label style="font-size:11.5px; color:var(--text-secondary);">Phong cách chữ phụ
-                                            đề:</label>
-                                        <select id="campaignSubtitleStyle" class="custom-select mt-1"
-                                            style="width:100%; height:40px;">
-                                            <option value="karaoke_yellow" selected>Highlight Chữ Vàng Neon
-                                                (Từng Từ)</option>
-                                            <option value="classic_white">Trắng Viền Đen Bold (Cổ điển)</option>
-                                            <option value="tiktok_gradient">Gradient Cyan & Hồng (TikTok Aesthetic)
-                                            </option>
-                                        </select>
+                                <div id="campaignSubtitleSettingsWrap">
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px;"
+                                        id="subtitleSettingsWrap">
+                                        <div>
+                                            <label style="font-size:11.5px; color:var(--text-secondary);">Phong cách chữ
+                                                phụ
+                                                đề:</label>
+                                            <select id="campaignSubtitleStyle" class="custom-select mt-1"
+                                                style="width:100%; height:40px;">
+                                                <option value="inherit_channel">Theo cài đặt của từng Kênh nguồn
+                                                </option>
+                                                <option value="karaoke_yellow" selected>Highlight Chữ Vàng Neon
+                                                    (Từng Từ)</option>
+                                                <option value="classic_white">Trắng Viền Đen Bold (Cổ điển)</option>
+                                                <option value="tiktok_gradient">Gradient Cyan &amp; Hồng (TikTok
+                                                    Aesthetic)
+                                                </option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style="font-size:11.5px; color:var(--text-secondary);">Vị trí hiển
+                                                thị
+                                                chữ:</label>
+                                            <select id="campaignSubtitlePosition" class="custom-select mt-1"
+                                                style="width:100%; height:40px;">
+                                                <option value="inherit_channel">Theo cài đặt của từng Kênh nguồn
+                                                </option>
+                                                <option value="center" selected>Chính Giữa Màn Hình (Focus)</option>
+                                                <option value="bottom">Gần Đáy Màn Hình (Sát phần mô tả)</option>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label style="font-size:11.5px; color:var(--text-secondary);">Vị trí hiển thị
-                                            chữ:</label>
-                                        <select id="campaignSubtitlePosition" class="custom-select mt-1"
-                                            style="width:100%; height:40px;">
-                                            <option value="center" selected>Chính Giữa Màn Hình (Focus)</option>
-                                            <option value="bottom">Gần Đáy Màn Hình (Sát phần mô tả)</option>
-                                        </select>
+                                    <div class="mt-2"
+                                        style="border-top:1px dashed rgba(255,255,255,0.08); padding-top:8px;">
+                                        <label
+                                            style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); cursor:pointer; user-select:none;">
+                                            <input type="checkbox" id="campaignDisableSubtitleForShorts" checked
+                                                style="width:15px; height:15px; accent-color:#f59e0b; cursor:pointer;">
+                                            <span>Tắt phụ đề cho Shorts (Hầu hết Shorts đã có sẵn phụ đề)</span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -4219,12 +4309,24 @@
                                         YouTube cắt tối đa số clip này để đăng.</small>
 
                                     <!-- Checkbox Đóng dấu chữ PART X chuyển xuống dưới số clip cắt -->
-                                    <label id="campaignAddPartLabelWrap"
-                                        style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); cursor:pointer; margin-top:8px;">
-                                        <input type="checkbox" id="campaignAddPartLabelSwitch" checked>
-                                        <span id="campaignAddPartLabelText"><i class="fa-solid fa-tag text-cyan"></i>
-                                            Đóng dấu chữ PART X trên video (Hiển thị / Ẩn chữ Part)</span>
-                                    </label>
+                                    <div style="margin-top:8px;">
+                                        <label id="campaignAddPartLabelWrap"
+                                            style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; margin:0; user-select:none;">
+                                            <input type="checkbox" id="campaignAddPartLabelSwitch" checked
+                                                style="margin:0; flex-shrink:0;">
+                                            <span id="campaignAddPartLabelText"
+                                                style="display:inline-flex; align-items:center; gap:3px; white-space:nowrap;">
+                                                Đóng dấu chữ PART X trên video
+                                                <span class="has-tooltip tooltip-multiline"
+                                                    data-tooltip="Lưu ý: Chỉ áp dụng cắt Part và gắn chữ PART cho Video Dài (> 3 phút). YouTube Shorts (≤ 3 phút) sẽ luôn được render nguyên bản 1 video trọn vẹn và không chèn chữ PART."
+                                                    title="Lưu ý: Chỉ áp dụng cắt Part và gắn chữ PART cho Video Dài (> 3 phút). YouTube Shorts (≤ 3 phút) sẽ luôn được render nguyên bản 1 video trọn vẹn và không chèn chữ PART."
+                                                    style="cursor:help; display:inline-flex; align-items:center; margin-left:4px;">
+                                                    <i class="fa-solid fa-circle-info text-cyan"
+                                                        style="font-size:14px; opacity:0.95;"></i>
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </div>
                                 </div>
                                 <div>
                                     <label style="font-size:12px; font-weight:600;"><i
@@ -4343,9 +4445,11 @@
                                 </div>
                                 <div>
                                     <label style="font-size:12px; font-weight:600;">
-                                        <i class="fa-solid fa-hourglass-half text-green" style="color:#10b981;"></i> Giãn Cách Đăng An Toàn (Cooldown):
+                                        <i class="fa-solid fa-hourglass-half text-green" style="color:#10b981;"></i>
+                                        Giãn Cách Đăng An Toàn (Cooldown):
                                     </label>
-                                    <select id="campaignMinPostIntervalSelect" class="custom-select mt-1" style="width:100%; height:40px;">
+                                    <select id="campaignMinPostIntervalSelect" class="custom-select mt-1"
+                                        style="width:100%; height:40px;">
                                         <option value="" selected>⚙️ Dùng cài đặt toàn cục (Global Setting)</option>
                                         <option value="60">60 phút (Tiêu chuẩn tối thiểu cho nick thường)</option>
                                         <option value="90">90 phút (Khuyên dùng cho kênh vừa và nhỏ)</option>
@@ -4353,22 +4457,28 @@
                                         <option value="180">180 phút (3 giờ - Dành cho nick mới / Warm-up)</option>
                                         <option value="240">240 phút (4 giờ - Tối đa độ giãn cách)</option>
                                     </select>
-                                    <small class="form-hint">Khoảng cách tối thiểu giữa 2 video liên tiếp đăng trên cùng một nick TikTok.</small>
+                                    <small class="form-hint">Khoảng cách tối thiểu giữa 2 video liên tiếp đăng trên cùng
+                                        một nick TikTok.</small>
                                 </div>
 
                                 <!-- Chế độ Warm-up Nuôi Nick Mới (Full width banner card) -->
                                 <div style="grid-column: span 2; margin-top: 2px;">
-                                    <div style="display:flex; align-items:flex-start; gap:12px; padding:12px 14px; background:rgba(245, 158, 11, 0.04); border-radius:8px; border:1px solid rgba(245, 158, 11, 0.2); width:100%; box-sizing:border-box;">
+                                    <div
+                                        style="display:flex; align-items:flex-start; gap:12px; padding:12px 14px; background:rgba(245, 158, 11, 0.04); border-radius:8px; border:1px solid rgba(245, 158, 11, 0.2); width:100%; box-sizing:border-box;">
                                         <label class="switch" style="margin-top:2px; flex-shrink:0;">
                                             <input type="checkbox" id="campaignWarmupSwitch">
                                             <span class="slider"></span>
                                         </label>
                                         <div>
-                                            <label for="campaignWarmupSwitch" style="color:var(--accent-gold); display:block; font-size:12.5px; font-weight:700; cursor:pointer; margin-bottom:2px;">
-                                                <i class="fa-solid fa-fire-flame-curved" style="margin-right:4px;"></i> Chế Độ Warm-up Nuôi Nick Mới
+                                            <label for="campaignWarmupSwitch"
+                                                style="color:var(--accent-gold); display:block; font-size:12.5px; font-weight:700; cursor:pointer; margin-bottom:2px;">
+                                                <i class="fa-solid fa-fire-flame-curved" style="margin-right:4px;"></i>
+                                                Chế Độ Warm-up Nuôi Nick Mới
                                             </label>
-                                            <span style="color:var(--text-muted); font-size:11.5px; line-height:1.45; display:block;">
-                                                Ngày 1&ndash;3: 1 clip/ngày &rarr; Ngày 4&ndash;7: 2 clip/ngày &rarr; Sau đó tự động tăng lên giới hạn tối đa để tránh vi phạm nick mới.
+                                            <span
+                                                style="color:var(--text-muted); font-size:11.5px; line-height:1.45; display:block;">
+                                                Ngày 1&ndash;3: 1 clip/ngày &rarr; Ngày 4&ndash;7: 2 clip/ngày &rarr;
+                                                Sau đó tự động tăng lên giới hạn tối đa để tránh vi phạm nick mới.
                                             </span>
                                         </div>
                                     </div>
@@ -4522,16 +4632,48 @@
                                 </div>
                             </div>
 
-                            <div class="modal-form-grid mt-3" style="grid-template-columns: 1fr 1fr; gap:12px;">
+                            <!-- Lựa chọn định dạng tải: Shorts / Video Dài -->
+                            <div
+                                style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin-top:12px;">
+                                <label
+                                    style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                                    <input type="checkbox" id="editCampaignIncludeShorts" checked
+                                        onchange="onToggleFormatCheckbox(this,'editCampaignIncludeShorts','editCampaignIncludeLongform','editCampaignMinDurationInput')"
+                                        style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                                    <div>
+                                        <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                                class="fa-brands fa-youtube text-danger"></i> Tải YouTube Shorts (≤ 3p)
+                                        </div>
+                                        <div style="font-size:11px; color:var(--text-muted);">Xuất 1 clip full, không
+                                            chèn chữ Part</div>
+                                    </div>
+                                </label>
+                                <label
+                                    style="display:flex; align-items:flex-start; gap:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:8px; cursor:pointer; user-select:none;">
+                                    <input type="checkbox" id="editCampaignIncludeLongform" checked
+                                        onchange="onToggleFormatCheckbox(this,'editCampaignIncludeShorts','editCampaignIncludeLongform','editCampaignMinDurationInput')"
+                                        style="width:16px; height:16px; margin-top:2px; accent-color:#f59e0b; cursor:pointer;">
+                                    <div>
+                                        <div style="font-size:12px; font-weight:600; color:var(--text-primary);"><i
+                                                class="fa-solid fa-film text-cyan"></i> Tải Video Dài (> 3p)</div>
+                                        <div style="font-size:11px; color:var(--text-muted);">Áp dụng giới hạn thời
+                                            lượng bên dưới</div>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="modal-form-grid mt-2" style="grid-template-columns: 1fr 1fr; gap:12px;">
                                 <div>
                                     <label style="font-size:12px; font-weight:600;"><i
                                             class="fa-solid fa-clock-rotate-left" style="color:#f59e0b;"></i> Thời lượng
                                         tải tối thiểu (giây):</label>
                                     <input type="number" id="editCampaignMinDurationInput" class="input-field mt-1"
-                                        placeholder="Để trống = dùng chung (300s / 5p)" min="10"
-                                        style="width:100%; height:40px;">
-                                    <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Ghi đè
-                                        giới hạn tối thiểu của chiến dịch</small>
+                                        value="0" placeholder="0" min="0" max="14400"
+                                        onchange="validateMinDurationInput(this)"
+                                        onblur="validateMinDurationInput(this)" style="width:100%; height:40px;">
+                                    <small class="form-hint" style="color:var(--text-muted); font-size:11px;">Chỉ áp
+                                        dụng
+                                        cho video dài (Tối thiểu 180s / 3 phút)</small>
                                 </div>
                                 <div>
                                     <label style="font-size:12px; font-weight:600;"><i class="fa-solid fa-hourglass-end"
@@ -4569,34 +4711,55 @@
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
                                     <label
                                         style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#fff; cursor:pointer;">
-                                        <input type="checkbox" id="editCampaignSubtitleSwitch">
+                                        <input type="checkbox" id="editCampaignSubtitleSwitch"
+                                            onchange="document.getElementById('editCampaignSubtitleSettingsWrap').style.display = this.checked ? '' : 'none'; if(this.checked){ document.getElementById('editCampaignDisableSubtitleForShorts').checked=true; } else { document.getElementById('editCampaignDisableSubtitleForShorts').checked=false; }">
                                         <span><i class="fa-solid fa-closed-captioning"
-                                                style="color:var(--accent-gold);"></i> Tự Động Nhận Diện & Tạo Phụ Đề AI
+                                                style="color:var(--accent-gold);"></i> Tự Động Nhận Diện &amp; Tạo Phụ
+                                            Đề AI
                                             (Faster-Whisper)</span>
                                     </label>
                                     <span class="badge badge-gold" style="font-size:10px;">Tăng Retention</span>
                                 </div>
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px;">
-                                    <div>
-                                        <label style="font-size:11.5px; color:var(--text-secondary);">Phong cách chữ phụ
-                                            đề:</label>
-                                        <select id="editCampaignSubtitleStyle" class="custom-select mt-1"
-                                            style="width:100%; height:40px;">
-                                            <option value="karaoke_yellow">Highlight Chữ Vàng Neon (Từng Từ)
-                                            </option>
-                                            <option value="classic_white">Trắng Viền Đen Bold (Cổ điển)</option>
-                                            <option value="tiktok_gradient">Gradient Cyan & Hồng (TikTok Aesthetic)
-                                            </option>
-                                        </select>
+                                <div id="editCampaignSubtitleSettingsWrap">
+                                    <div
+                                        style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px;">
+                                        <div>
+                                            <label style="font-size:11.5px; color:var(--text-secondary);">Phong cách chữ
+                                                phụ
+                                                đề:</label>
+                                            <select id="editCampaignSubtitleStyle" class="custom-select mt-1"
+                                                style="width:100%; height:40px;">
+                                                <option value="inherit_channel">Theo cài đặt của từng Kênh nguồn
+                                                </option>
+                                                <option value="karaoke_yellow">Highlight Chữ Vàng Neon (Từng Từ)
+                                                </option>
+                                                <option value="classic_white">Trắng Viền Đen Bold (Cổ điển)</option>
+                                                <option value="tiktok_gradient">Gradient Cyan &amp; Hồng (TikTok
+                                                    Aesthetic)
+                                                </option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style="font-size:11.5px; color:var(--text-secondary);">Vị trí hiển
+                                                thị
+                                                chữ:</label>
+                                            <select id="editCampaignSubtitlePosition" class="custom-select mt-1"
+                                                style="width:100%; height:40px;">
+                                                <option value="inherit_channel">Theo cài đặt của từng Kênh nguồn
+                                                </option>
+                                                <option value="center">Chính Giữa Màn Hình (Focus)</option>
+                                                <option value="bottom">Gần Đáy Màn Hình (Sát phần mô tả)</option>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label style="font-size:11.5px; color:var(--text-secondary);">Vị trí hiển thị
-                                            chữ:</label>
-                                        <select id="editCampaignSubtitlePosition" class="custom-select mt-1"
-                                            style="width:100%; height:40px;">
-                                            <option value="center">Chính Giữa Màn Hình (Focus)</option>
-                                            <option value="bottom">Gần Đáy Màn Hình (Sát phần mô tả)</option>
-                                        </select>
+                                    <div class="mt-2"
+                                        style="border-top:1px dashed rgba(255,255,255,0.08); padding-top:8px;">
+                                        <label
+                                            style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); cursor:pointer; user-select:none;">
+                                            <input type="checkbox" id="editCampaignDisableSubtitleForShorts" checked
+                                                style="width:15px; height:15px; accent-color:#f59e0b; cursor:pointer;">
+                                            <span>Tắt phụ đề cho Shorts (Hầu hết Shorts đã có sẵn phụ đề)</span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -4721,13 +4884,24 @@
                                         YouTube cắt tối đa số clip này để đăng.</small>
 
                                     <!-- Checkbox Đóng dấu chữ PART X chuyển xuống dưới số clip cắt -->
-                                    <label id="editCampaignAddPartLabelWrap"
-                                        style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); cursor:pointer; margin-top:8px;">
-                                        <input type="checkbox" id="editCampaignAddPartLabelSwitch" checked>
-                                        <span id="editCampaignAddPartLabelText"><i
-                                                class="fa-solid fa-tag text-cyan"></i> Đóng dấu chữ PART X trên video
-                                            (Hiển thị / Ẩn chữ Part)</span>
-                                    </label>
+                                    <div style="margin-top:8px;">
+                                        <label id="editCampaignAddPartLabelWrap"
+                                            style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; margin:0; user-select:none;">
+                                            <input type="checkbox" id="editCampaignAddPartLabelSwitch" checked
+                                                style="margin:0; flex-shrink:0;">
+                                            <span id="editCampaignAddPartLabelText"
+                                                style="display:inline-flex; align-items:center; gap:3px; white-space:nowrap;">
+                                                Đóng dấu chữ PART X trên video
+                                                <span class="has-tooltip tooltip-multiline"
+                                                    data-tooltip="Lưu ý: Chỉ áp dụng cắt Part và gắn chữ PART cho Video Dài (> 3 phút). YouTube Shorts (≤ 3 phút) sẽ luôn được render nguyên bản 1 video trọn vẹn và không chèn chữ PART."
+                                                    title="Lưu ý: Chỉ áp dụng cắt Part và gắn chữ PART cho Video Dài (> 3 phút). YouTube Shorts (≤ 3 phút) sẽ luôn được render nguyên bản 1 video trọn vẹn và không chèn chữ PART."
+                                                    style="cursor:help; display:inline-flex; align-items:center; margin-left:4px;">
+                                                    <i class="fa-solid fa-circle-info text-cyan"
+                                                        style="font-size:14px; opacity:0.95;"></i>
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </div>
                                 </div>
                                 <div>
                                     <label style="font-size:12px; font-weight:600;"><i
@@ -4843,9 +5017,11 @@
                                 </div>
                                 <div>
                                     <label style="font-size:12px; font-weight:600;">
-                                        <i class="fa-solid fa-hourglass-half text-green" style="color:#10b981;"></i> Giãn Cách Đăng An Toàn (Cooldown):
+                                        <i class="fa-solid fa-hourglass-half text-green" style="color:#10b981;"></i>
+                                        Giãn Cách Đăng An Toàn (Cooldown):
                                     </label>
-                                    <select id="editCampaignMinPostIntervalSelect" class="custom-select mt-1" style="width:100%; height:40px;">
+                                    <select id="editCampaignMinPostIntervalSelect" class="custom-select mt-1"
+                                        style="width:100%; height:40px;">
                                         <option value="" selected>⚙️ Dùng cài đặt toàn cục (Global Setting)</option>
                                         <option value="60">60 phút (Tiêu chuẩn tối thiểu cho nick thường)</option>
                                         <option value="90">90 phút (Khuyên dùng cho kênh vừa và nhỏ)</option>
@@ -4853,22 +5029,28 @@
                                         <option value="180">180 phút (3 giờ - Dành cho nick mới / Warm-up)</option>
                                         <option value="240">240 phút (4 giờ - Tối đa độ giãn cách)</option>
                                     </select>
-                                    <small class="form-hint">Khoảng cách tối thiểu giữa 2 video liên tiếp đăng trên cùng một nick TikTok.</small>
+                                    <small class="form-hint">Khoảng cách tối thiểu giữa 2 video liên tiếp đăng trên cùng
+                                        một nick TikTok.</small>
                                 </div>
 
                                 <!-- Chế độ Warm-up Nuôi Nick Mới (Full width banner card) -->
                                 <div style="grid-column: span 2; margin-top: 2px;">
-                                    <div style="display:flex; align-items:flex-start; gap:12px; padding:12px 14px; background:rgba(245, 158, 11, 0.04); border-radius:8px; border:1px solid rgba(245, 158, 11, 0.2); width:100%; box-sizing:border-box;">
+                                    <div
+                                        style="display:flex; align-items:flex-start; gap:12px; padding:12px 14px; background:rgba(245, 158, 11, 0.04); border-radius:8px; border:1px solid rgba(245, 158, 11, 0.2); width:100%; box-sizing:border-box;">
                                         <label class="switch" style="margin-top:2px; flex-shrink:0;">
                                             <input type="checkbox" id="editCampaignWarmupSwitch">
                                             <span class="slider"></span>
                                         </label>
                                         <div>
-                                            <label for="editCampaignWarmupSwitch" style="color:var(--accent-gold); display:block; font-size:12.5px; font-weight:700; cursor:pointer; margin-bottom:2px;">
-                                                <i class="fa-solid fa-fire-flame-curved" style="margin-right:4px;"></i> Chế Độ Warm-up Nuôi Nick Mới
+                                            <label for="editCampaignWarmupSwitch"
+                                                style="color:var(--accent-gold); display:block; font-size:12.5px; font-weight:700; cursor:pointer; margin-bottom:2px;">
+                                                <i class="fa-solid fa-fire-flame-curved" style="margin-right:4px;"></i>
+                                                Chế Độ Warm-up Nuôi Nick Mới
                                             </label>
-                                            <span style="color:var(--text-muted); font-size:11.5px; line-height:1.45; display:block;">
-                                                Ngày 1&ndash;3: 1 clip/ngày &rarr; Ngày 4&ndash;7: 2 clip/ngày &rarr; Sau đó tự động tăng lên giới hạn tối đa để bảo vệ tài khoản.
+                                            <span
+                                                style="color:var(--text-muted); font-size:11.5px; line-height:1.45; display:block;">
+                                                Ngày 1&ndash;3: 1 clip/ngày &rarr; Ngày 4&ndash;7: 2 clip/ngày &rarr;
+                                                Sau đó tự động tăng lên giới hạn tối đa để bảo vệ tài khoản.
                                             </span>
                                         </div>
                                     </div>
@@ -5494,15 +5676,16 @@
                 <input type="hidden" id="editStudioVideoId">
                 <div class="form-group">
                     <label><i class="fa-solid fa-heading text-purple"></i> Tiêu Đề Video:</label>
-                    <textarea id="editStudioVideoTitle" class="input-field" rows="3"
-                        placeholder="Nhập tiêu đề video..." style="resize:vertical; line-height:1.45;"></textarea>
+                    <textarea id="editStudioVideoTitle" class="input-field" rows="3" placeholder="Nhập tiêu đề video..."
+                        style="resize:vertical; line-height:1.45;"></textarea>
                     <small class="form-hint">Tiêu đề này sẽ được dùng khi biên tập và đặt tên Part render.</small>
                 </div>
             </div>
             <div class="modal-footer"
                 style="display:flex; justify-content:flex-end; gap:10px; padding: 12px 22px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
                 <button type="button" class="btn btn-secondary" onclick="closeEditStudioVideoModal()">Hủy</button>
-                <button type="button" class="btn btn-primary" id="btnSaveStudioVideoEdit" onclick="saveStudioVideoEdit(this)">
+                <button type="button" class="btn btn-primary" id="btnSaveStudioVideoEdit"
+                    onclick="saveStudioVideoEdit(this)">
                     <i class="fa-solid fa-floppy-disk"></i> Lưu Thay Đổi
                 </button>
             </div>
@@ -5511,7 +5694,8 @@
 
     <!-- MODAL CHI TIẾT VIDEO KÊNH NGUỒN -->
     <div class="modal" id="modalChannelVideos">
-        <div class="modal-content glass-panel" style="max-width: 860px; height: 90vh; max-height: 92vh; display:flex; flex-direction:column; overflow:hidden;">
+        <div class="modal-content glass-panel"
+            style="max-width: 860px; height: 90vh; max-height: 92vh; display:flex; flex-direction:column; overflow:hidden;">
             <div class="modal-header" style="position:relative; flex-shrink:0;">
                 <div>
                     <h3 id="modalChannelVideosTitle"><i class="fa-solid fa-film text-cyan"></i> Video Kênh Nguồn</h3>
@@ -5520,10 +5704,14 @@
                 <button type="button" class="close-btn" onclick="closeChannelVideosModal()" title="Đóng"
                     style="position:absolute; top:14px; right:18px;"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-body" style="padding: 18px 22px; overflow-y:auto; flex:1; min-height: 480px; max-height:calc(92vh - 130px);" id="modalChannelVideosBody">
-                <div class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Đang nạp danh sách video...</div>
+            <div class="modal-body"
+                style="padding: 18px 22px; overflow-y:auto; flex:1; min-height: 480px; max-height:calc(92vh - 130px);"
+                id="modalChannelVideosBody">
+                <div class="text-center py-4 text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Đang nạp danh sách
+                    video...</div>
             </div>
-            <div class="modal-footer" style="padding: 12px 20px; display:flex; justify-content:space-between; align-items:center; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink:0;">
+            <div class="modal-footer"
+                style="padding: 12px 20px; display:flex; justify-content:space-between; align-items:center; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink:0;">
                 <span style="font-size:12px; color:var(--text-muted);" id="modalChannelVideosStats">0 Video</span>
                 <button type="button" class="btn btn-secondary" onclick="closeChannelVideosModal()">Đóng</button>
             </div>

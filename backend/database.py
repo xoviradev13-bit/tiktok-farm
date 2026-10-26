@@ -48,6 +48,14 @@ def init_db():
         "auto_render": "INTEGER DEFAULT 1",
         "bgm_folder": "TEXT DEFAULT ''",
         "bgm_volume": "REAL DEFAULT 0.15",
+        "min_video_duration": "INTEGER DEFAULT NULL",
+        "max_video_duration": "INTEGER DEFAULT NULL",
+        "include_shorts": "INTEGER DEFAULT NULL",
+        "include_longform": "INTEGER DEFAULT NULL",
+        "disable_subtitle_for_shorts": "INTEGER DEFAULT 1",
+        "subtitle_enabled": "INTEGER DEFAULT NULL",
+        "subtitle_style": "TEXT DEFAULT ''",
+        "subtitle_position": "TEXT DEFAULT ''",
     }
     for col, col_type in new_cols.items():
         if col not in existing_cols:
@@ -55,6 +63,12 @@ def init_db():
                 cursor.execute(f"ALTER TABLE channels ADD COLUMN {col} {col_type}")
             except Exception:
                 pass
+
+    # Mặc định tắt phụ đề cho Shorts là 1 (checked) cho kênh
+    try:
+        cursor.execute("UPDATE channels SET disable_subtitle_for_shorts = 1 WHERE disable_subtitle_for_shorts = 0 OR disable_subtitle_for_shorts IS NULL")
+    except Exception:
+        pass
 
     # Bảng video tải về và xử lý
     cursor.execute('''
@@ -272,6 +286,10 @@ def init_db():
         "bgm_folder": "TEXT DEFAULT ''",
         "bgm_volume": "REAL DEFAULT 0.15",
         "min_post_interval_minutes": "INTEGER DEFAULT 60",
+        "include_shorts": "INTEGER DEFAULT 1",
+        "include_longform": "INTEGER DEFAULT 1",
+        "disable_subtitle_for_shorts": "INTEGER DEFAULT 1",
+        "subtitle_position": "TEXT DEFAULT 'center'",
     }
     for col, col_type in new_camp_cols.items():
         if col not in existing_camp_cols:
@@ -279,6 +297,12 @@ def init_db():
                 cursor.execute(f"ALTER TABLE campaigns ADD COLUMN {col} {col_type}")
             except Exception:
                 pass
+
+    # Mặc định tắt phụ đề cho Shorts là 1 (checked) cho chiến dịch
+    try:
+        cursor.execute("UPDATE campaigns SET disable_subtitle_for_shorts = 1 WHERE disable_subtitle_for_shorts = 0 OR disable_subtitle_for_shorts IS NULL")
+    except Exception:
+        pass
 
     # Bảng Lịch sử hoạt động riêng cho từng chiến dịch (Campaign Run Logs)
     cursor.execute('''
