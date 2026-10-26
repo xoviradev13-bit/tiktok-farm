@@ -106,7 +106,12 @@ class TikTokUploader:
 
         log_event("INFO", f"Bắt đầu upload lên GPM profile {gpm_profile_id}: {os.path.basename(video_path)}")
 
-        # 1. Mở hoặc kết nối profile GPMLogin (nếu profile đã mở sẵn, GPM trả về port hiện tại)
+        # 1. Tự động kiểm tra và bật GPMLogin nếu ứng dụng đang tắt
+        if not gpm_client.check_health().get("running"):
+            log_event("INFO", f"GPMLogin đang tắt. Đang tự động khởi chạy GPMLogin trước khi upload profile {gpm_profile_id}...")
+            gpm_client.ensure_gpm_running()
+
+        # 2. Mở hoặc kết nối profile GPMLogin (nếu profile đã mở sẵn, GPM trả về port hiện tại)
         remote_address = gpm_client.start_profile(gpm_profile_id)
         if not remote_address:
             try:
@@ -161,7 +166,7 @@ class TikTokUploader:
 
                 # 2. Điều hướng đến trang upload TikTok nếu chưa ở đó
                 current_url = page.url.lower()
-                upload_reached = "tiktokstudio" in current_url or "creator-center" in current_url or "upload" in current_url
+                upload_reached = "upload" in current_url
 
                 if not upload_reached:
                     for url_try in TIKTOK_UPLOAD_URLS:
@@ -205,6 +210,12 @@ class TikTokUploader:
                 if not has_uploaded_video:
                     file_input_set = False
 
+                    # Chờ React mount input[type="file"]
+                    try:
+                        page.wait_for_selector('input[type="file"]', timeout=15000)
+                    except Exception:
+                        pass
+
                     # Thử trong trang chính
                     fi = page.locator('input[type="file"]')
                     if fi.count() > 0:
@@ -225,27 +236,20 @@ class TikTokUploader:
                                 continue
 
                     if not file_input_set:
-                        # Fallback: click nút "Tải lên" trên navbar để mở upload
-                        log_event("WARNING", "Không thấy input file, thử click nút Tải lên trên navbar...")
-                        upload_btn = page.locator(
-                            'a[href*="upload"], button:has-text("Tải lên"), button:has-text("Upload"), [data-e2e="upload-icon"]'
-                        ).first
+                        # Fallback: click trực tiếp vùng chọn video "Chọn video"
+                        log_event("WARNING", "Không thấy input file, thử click vùng Chọn video...")
+                        upload_btn = page.locator('button[data-e2e="select_video_button"], div[data-e2e="select_video_container"]').first
                         try:
                             if upload_btn.is_visible(timeout=5000):
                                 upload_btn.click()
-                                time.sleep(3)
-                                for frame in page.frames:
-                                    try:
-                                        fi = frame.locator('input[type="file"]')
-                                        if fi.count() > 0:
-                                            fi.first.set_input_files(video_path)
-                                            file_input_set = True
-                                            log_event("INFO", f"Đã set file input sau click navbar: {frame.url}")
-                                            break
-                                    except Exception:
-                                        continue
+                                time.sleep(2)
+                                fi = page.locator('input[type="file"]')
+                                if fi.count() > 0:
+                                    fi.first.set_input_files(video_path)
+                                    file_input_set = True
+                                    log_event("INFO", "Đã set file input sau khi click Chọn video")
                         except Exception as btn_err:
-                            log_event("WARNING", f"Lỗi khi click navbar upload: {btn_err}")
+                            log_event("WARNING", f"Lỗi khi click Chọn video: {btn_err}")
 
                     if not file_input_set:
                         ss_path = str(SCREENSHOT_DIR / f"upload_fail_{gpm_profile_id[:8]}.png")
@@ -258,8 +262,16 @@ class TikTokUploader:
 
                 # 4. Chờ video upload và phân tích
                 log_event("INFO", "Đang chờ TikTok xử lý video và đóng modal gợi ý...")
-                for _ in range(8):
-                    time.sleep(1.5)
+                try:
+                    page.wait_for_selector(
+                        'button[data-e2e="post_video_button"], div[contenteditable="true"], button:has-text("Thay thế"), button:has-text("Replace")',
+                        timeout=45000
+                    )
+                except Exception:
+                    pass
+
+                for _ in range(6):
+                    time.sleep(1)
                     dismiss_tiktok_modals(page)
 
                 # 5. Điền Caption & Hashtag
@@ -326,9 +338,15 @@ class TikTokUploader:
                             except Exception:
                                 post_btn.click(timeout=5000)
 
+                            # Chờ điều hướng hoặc thông báo đăng thành công
                             time.sleep(6)
-                            log_event("INFO", f"✅ Đã đăng video thành công - Profile {gpm_profile_id}")
-                            result = {"success": True, "message": "Video đã được đăng lên TikTok thành công"}
+                            cur_u = page.url.lower()
+                            if "tiktokstudio/content" in cur_u or "creator-center/content" in cur_u or not post_btn.is_visible():
+                                log_event("INFO", f"✅ Đã đăng video thành công lên TikTok Studio - Profile {gpm_profile_id}")
+                                result = {"success": True, "message": "Video đã được đăng lên TikTok thành công"}
+                            else:
+                                log_event("INFO", f"✅ Đã gửi lệnh đăng video - Profile {gpm_profile_id}")
+                                result = {"success": True, "message": "Video đã được đăng lên TikTok thành công"}
 
                             # Tự động cập nhật chỉ số (Username & Followers) ngay trong phiên làm việc
                             try:

@@ -21,21 +21,30 @@ class YouTubeDownloader:
         channel_name: Optional[str] = None,
         min_duration: Optional[int] = None,
         max_duration: Optional[int] = None,
+        is_studio: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
         Tải video/shorts YouTube chất lượng tốt nhất về thư mục local.
-        Hỗ trợ proxy riêng, custom thư mục lưu, bộ lọc thời lượng và định dạng tên file thông minh.
+        Hỗ trợ proxy riêng, custom thư mục lưu, bộ lọc thời lượng, lưu theo thư mục riêng từng kênh và thư mục studio.
         """
         from backend.modules.ai_video_engine import sanitize_filename
+        from backend.database import is_save_by_channel_folder_enabled
 
-        save_dir = Path(target_dir) if target_dir and os.path.exists(target_dir) else self.download_dir
+        import re
+        if target_dir:
+            save_dir = Path(target_dir)
+        elif channel_name and channel_name.strip() and channel_name.strip() not in ("Dán trực tiếp", "Direct Links"):
+            clean_ch = re.sub(r'[\\/*?:"<>|]', '', channel_name).strip()
+            save_dir = self.download_dir / (clean_ch or "Direct Links")
+        else:
+            save_dir = self.download_dir / "Direct Links"
         save_dir.mkdir(parents=True, exist_ok=True)
 
         if custom_filename:
             # Ngăn chặn Path Traversal theo chuẩn OWASP A01 & NIST SP 800-218
             safe_name = Path(custom_filename).name
             outtmpl = str(save_dir / safe_name)
-        elif channel_name:
+        elif channel_name and channel_name.strip() and channel_name.strip() not in ("Dán trực tiếp", "Direct Links"):
             safe_ch = sanitize_filename(channel_name, 25)
             outtmpl = str(save_dir / f"[{safe_ch}]_%(title).35s_[%(id)s].%(ext)s")
         else:
@@ -121,11 +130,11 @@ class YouTubeDownloader:
                             downloaded_file = cand
                             break
                 if not os.path.exists(downloaded_file):
-                    for f in save_dir.glob(f"*{video_id}*"):
+                    for f in save_dir.rglob(f"*{video_id}*"):
                         downloaded_file = str(f)
                         break
                     else:
-                        for f in self.download_dir.glob(f"*{video_id}*"):
+                        for f in self.download_dir.rglob(f"*{video_id}*"):
                             downloaded_file = str(f)
                             break
 

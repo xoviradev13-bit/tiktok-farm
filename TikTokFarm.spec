@@ -1,0 +1,110 @@
+# -*- mode: python ; coding: utf-8 -*-
+import sys
+import os
+from pathlib import Path
+
+block_cipher = None
+
+a = Analysis(
+    ['main.py'],
+    pathex=['.'],
+    binaries=[],
+    datas=[
+        ('frontend', 'frontend'),
+        ('logo', 'logo'),
+        ('.env.example', '.'),
+    ],
+    hiddenimports=[
+        'uvicorn',
+        'uvicorn.logging',
+        'uvicorn.loops',
+        'uvicorn.loops.auto',
+        'uvicorn.protocols',
+        'uvicorn.protocols.http',
+        'uvicorn.protocols.http.auto',
+        'uvicorn.protocols.websockets',
+        'uvicorn.protocols.websockets.auto',
+        'uvicorn.lifespan',
+        'uvicorn.lifespan.on',
+        'uvicorn.lifespan.off',
+        'fastapi',
+        'fastapi.staticfiles',
+        'fastapi.middleware.cors',
+        'starlette',
+        'starlette.middleware.base',
+        'pydantic',
+        'pystray',
+        'pystray._win32',
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageDraw',
+        'playwright',
+        'imageio_ffmpeg',
+        'yt_dlp',
+        'requests',
+        'httpx',
+        'sqlite3',
+        'winreg',
+        'webview',
+        'backend',
+        'backend.app',
+        'backend.config',
+        'backend.database',
+        'backend.logger',
+        'backend.scheduler',
+        'backend.modules',
+        'backend.modules.tray_manager',
+        'backend.modules.gpm_client',
+        'backend.modules.yt_scanner',
+        'backend.modules.yt_downloader',
+        'backend.modules.ai_video_engine',
+        'backend.modules.tiktok_uploader',
+        'backend.modules.metrics_tracker',
+        'backend.modules.notifier',
+        'backend.modules.yt_monitor',
+        'backend.modules.tiktok_tracker',
+        'backend.modules.diagnostics',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['tkinter', 'unittest'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='TikTokFarm',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,  # Disabling UPX compression prevents heuristic AV false positives
+    console=False, # Windowed desktop app
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='logo/app-logo.ico',
+    version='version_info.txt',
+    manifest='app.manifest',
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='TikTokFarm',
+)

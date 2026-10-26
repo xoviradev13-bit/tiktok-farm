@@ -1,5 +1,5 @@
 @echo off
-title TikTok Auto Farm & AI Video Engine (GPMLogin)
+title TikTok Auto Farm & AI Video Engine
 color 0b
 
 echo ========================================================

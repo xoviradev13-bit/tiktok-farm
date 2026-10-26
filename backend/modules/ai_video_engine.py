@@ -3,9 +3,13 @@ import re
 import unicodedata
 import subprocess
 import shutil
+import random
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
-from backend.config import RENDERED_DIR, ENABLE_DYNAMIC_SUBTITLES, ENABLE_ANTI_DETECT, WHISPER_MODEL_SIZE
+from backend.config import (
+    RENDERED_DIR, MUSIC_DIR, ENABLE_DYNAMIC_SUBTITLES, ENABLE_ANTI_DETECT, WHISPER_MODEL_SIZE,
+    SUBTITLE_STYLE, SUBTITLE_POSITION, SUBTITLE_FONT_SIZE
+)
 from backend.database import get_connection, log_event
 from backend.logger import get_logger
 
@@ -19,6 +23,7 @@ from backend.modules.video_core.quality_checker import quality_checker
 from backend.modules.ai_addon.llm_curator import llm_curator
 from backend.modules.ai_addon.whisper_transcriber import whisper_transcriber
 from backend.modules.ai_addon.ass_subtitle import ass_subtitle_generator
+from backend.modules.audio_manager import audio_manager
 
 def sanitize_filename(text: Optional[str], max_length: int = 30) -> str:
     """Loại bỏ emoji, ký tự cấm của Windows và ký tự gây lỗi FFmpeg/URL, giữ ký tự an toàn và rút gọn độ dài"""
@@ -70,7 +75,11 @@ class AIVideoEngine:
         enable_subtitles: Optional[bool] = None,
         transcript_segments: Optional[List[Dict[str, Any]]] = None,
         hook_text: Optional[str] = None,
-        add_part_label: bool = True
+        add_part_label: bool = True,
+        subtitle_style: Optional[str] = None,
+        subtitle_position: Optional[str] = None,
+        bgm_folder: Optional[str] = None,
+        bgm_volume: Optional[float] = None
     ) -> Optional[str]:
         """
         Xử lý video hoàn chỉnh chuẩn Enterprise SaaS:
@@ -78,20 +87,22 @@ class AIVideoEngine:
         2. Tự động burn phụ đề động Karaoke nếu bật
         3. Áp dụng toàn bộ bộ lọc Anti-Detection (Color grading, Noise pHash, Audio pitch/resample)
         4. Tối ưu phần cứng với GPU NVENC hoặc CPU libx264
-        5. Xóa sạch metadata gốc (-map_metadata -1)
-        6. Kiểm tra chất lượng (Quality Check) trước khi xuất
+        5. Tích hợp nhạc nền BGM chủ đề theo kênh (Shuffle + Volume ducking + Fade-out 2s)
+        6. Xóa sạch metadata gốc (-map_metadata -1)
+        7. Kiểm tra chất lượng (Quality Check) trước khi xuất
         """
         if not os.path.exists(input_file):
             log_event("ERROR", f"Không tìm thấy file video đầu vào: {input_file}")
             return None
 
-        # Tra cứu thông tin kênh và tiêu đề từ database nếu thiếu
-        if not channel_name or not video_title or not output_dir:
+        # Tra cứu thông tin kênh, tiêu đề và cấu hình BGM từ database nếu thiếu
+        if not channel_name or not video_title or not output_dir or bgm_folder is None:
             try:
                 conn = get_connection()
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT v.title, c.display_name, c.title as ch_title, c.render_dir as ch_render_dir
+                    SELECT v.title, c.display_name, c.title as ch_title, c.render_dir as ch_render_dir,
+                           c.bgm_folder, c.bgm_volume
                     FROM videos v
                     LEFT JOIN channels c ON v.channel_id = c.channel_id
                     WHERE v.yt_video_id = ?
@@ -105,14 +116,23 @@ class AIVideoEngine:
                         channel_name = row["display_name"] or row["ch_title"] or ""
                     if not output_dir and row["ch_render_dir"] and os.path.exists(row["ch_render_dir"]):
                         output_dir = row["ch_render_dir"]
+                    if bgm_folder is None and "bgm_folder" in row.keys():
+                        bgm_folder = row["bgm_folder"] or ""
+                    if bgm_volume is None and "bgm_volume" in row.keys() and row["bgm_volume"]:
+                        bgm_volume = float(row["bgm_volume"])
             except Exception:
                 pass
 
-        target_dir = Path(output_dir) if output_dir and os.path.exists(output_dir) else self.output_dir
-        target_dir.mkdir(parents=True, exist_ok=True)
-
         safe_channel = sanitize_filename(channel_name, max_length=25)
         safe_title = sanitize_filename(video_title, max_length=35)
+
+        base_target_dir = Path(output_dir) if output_dir and os.path.exists(output_dir) else self.output_dir
+        if channel_name and channel_name.strip() and channel_name.strip() not in ("Dán trực tiếp", "Direct Links"):
+            clean_ch = re.sub(r'[\\/*?:"<>|]', '', channel_name).strip()
+            target_dir = base_target_dir / (clean_ch or "Direct Links")
+        else:
+            target_dir = base_target_dir / "Direct Links"
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         parts = []
         if safe_channel:
@@ -125,6 +145,33 @@ class AIVideoEngine:
         clean_filename = "_".join(parts) + ".mp4"
         output_file = str(target_dir / clean_filename)
         log_event("INFO", f"Bắt đầu render video AI Reup {video_id} (Part {part_number}, duration {duration:.1f}s) -> {clean_filename}")
+
+        # Chọn bài hát BGM thông minh (Mood / Cảm xúc + Dò điểm Beat Drop)
+        selected_bgm = None
+        bgm_start_offset = 0.0
+        used_bgm_cat = ""
+        target_bgm_vol = bgm_volume if bgm_volume is not None else 0.15
+
+        if bgm_folder and bgm_folder.strip():
+            transcript_sample = ""
+            if transcript_segments:
+                transcript_sample = " ".join(s.get("text", "") for s in transcript_segments[:8])
+            elif video_title:
+                transcript_sample = video_title
+
+            selected_bgm, bgm_start_offset, used_bgm_cat = audio_manager.get_smart_bgm(
+                folder_or_mood=bgm_folder.strip(),
+                transcript_text=transcript_sample
+            )
+            if selected_bgm:
+                log_event(
+                    "INFO",
+                    f"🎵 Áp dụng BGM thông minh [{used_bgm_cat}]: {Path(selected_bgm).name} "
+                    f"(Beat Drop: {bgm_start_offset:.1f}s, Sidechain Auto-Ducking: BẬT, Vol: {int(target_bgm_vol*100)}%) "
+                    f"cho {clean_filename}"
+                )
+            else:
+                logger.warning(f"Thư mục nhạc nền [{bgm_folder}] chưa có bài hát nào, sẽ render âm thanh gốc.")
 
         # Chuẩn bị phụ đề Karaoke .ass nếu bật
         sub_ass_path = None
@@ -143,7 +190,10 @@ class AIVideoEngine:
                     transcript_segments=transcript_segments,
                     output_ass_path=temp_ass,
                     start_offset=start_time,
-                    max_duration=duration
+                    max_duration=duration,
+                    style_name=subtitle_style or SUBTITLE_STYLE,
+                    position=subtitle_position or SUBTITLE_POSITION,
+                    font_size=SUBTITLE_FONT_SIZE
                 )
 
         # Xây dựng Filter Complex chống kiểm duyệt
@@ -160,17 +210,48 @@ class AIVideoEngine:
         # Cờ encoder tối ưu (NVENC hoặc CPU libx264)
         encoder_flags = get_optimal_video_encoder_flags()
 
-        cmd = [
-            self.ffmpeg_bin,
-            "-y",
-            "-ss", str(start_time),
-            "-t", str(duration),
-            "-i", input_file,
-            "-filter_complex", filter_complex,
-            "-map", f"[{out_map}]",  # video: từ filter_complex
-            "-map", "0:a",           # audio: trực tiếp từ luồng gốc
-            "-af", audio_filter
-        ]
+        has_bgm = bool(selected_bgm and os.path.exists(selected_bgm))
+        fade_start = max(0.0, float(duration) - 2.0)
+
+        if has_bgm:
+            # Smart Auto-Ducking (Sidechain Compression):
+            # Khi có giọng nói: Nhạc tự động nén xuống -12dB (êm dịu làm nền)
+            # Khi ngắt câu / khoảng lặng: Nhạc tự dâng lên nhịp nhàng (+6dB) tạo nhịp điệu cuốn hút
+            bgm_boost_vol = min(1.0, target_bgm_vol * 1.6)
+            full_filter_complex = (
+                f"{filter_complex};"
+                f"[0:a]{audio_filter}[a_voice];"
+                f"[1:a]volume={bgm_boost_vol:.2f},afade=t=out:st={fade_start:.1f}:d=2[a_bgm_raw];"
+                f"[a_bgm_raw][a_voice]sidechaincompress=threshold=0.08:ratio=3.5:attack=50:release=350[a_bgm_ducked];"
+                f"[a_voice][a_bgm_ducked]amix=inputs=2:duration=first:dropout_transition=2[a_out]"
+            )
+            cmd = [
+                self.ffmpeg_bin,
+                "-y",
+                "-ss", str(start_time),
+                "-t", str(duration),
+                "-i", input_file,
+                "-ss", str(bgm_start_offset),
+                "-stream_loop", "-1",
+                "-i", selected_bgm,
+                "-filter_complex", full_filter_complex,
+                "-map", f"[{out_map}]",
+                "-map", "[a_out]"
+            ]
+        else:
+            full_filter_complex = filter_complex
+            cmd = [
+                self.ffmpeg_bin,
+                "-y",
+                "-ss", str(start_time),
+                "-t", str(duration),
+                "-i", input_file,
+                "-filter_complex", filter_complex,
+                "-map", f"[{out_map}]",
+                "-map", "0:a",
+                "-af", audio_filter
+            ]
+
         cmd.extend(encoder_flags)
         cmd.extend([
             "-c:a", "aac",
@@ -191,16 +272,30 @@ class AIVideoEngine:
             if process.returncode != 0 and "nvenc" in " ".join(encoder_flags).lower():
                 logger.warning("NVENC GPU Render thất bại. Đang tự động chuyển sang CPU libx264 fallback...")
                 cpu_flags = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p"]
-                fallback_cmd = [
-                    self.ffmpeg_bin, "-y",
-                    "-ss", str(start_time),
-                    "-t", str(duration),
-                    "-i", input_file,
-                    "-filter_complex", filter_complex,
-                    "-map", f"[{out_map}]",
-                    "-map", "0:a",
-                    "-af", audio_filter
-                ]
+                if has_bgm:
+                    fallback_cmd = [
+                        self.ffmpeg_bin, "-y",
+                        "-ss", str(start_time),
+                        "-t", str(duration),
+                        "-i", input_file,
+                        "-ss", str(bgm_start_offset),
+                        "-stream_loop", "-1",
+                        "-i", selected_bgm,
+                        "-filter_complex", full_filter_complex,
+                        "-map", f"[{out_map}]",
+                        "-map", "[a_out]"
+                    ]
+                else:
+                    fallback_cmd = [
+                        self.ffmpeg_bin, "-y",
+                        "-ss", str(start_time),
+                        "-t", str(duration),
+                        "-i", input_file,
+                        "-filter_complex", filter_complex,
+                        "-map", f"[{out_map}]",
+                        "-map", "0:a",
+                        "-af", audio_filter
+                    ]
                 fallback_cmd.extend(cpu_flags)
                 fallback_cmd.extend([
                     "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
@@ -290,31 +385,48 @@ class AIVideoEngine:
         part_duration: int = 65,
         channel_name: Optional[str] = None,
         video_title: Optional[str] = None,
-        output_dir: Optional[str] = None
+        output_dir: Optional[str] = None,
+        max_clips: int = 5,
+        add_part_label: bool = True,
+        enable_subtitles: Optional[bool] = None,
+        flip_horizontal: bool = True,
+        speed_factor: float = 1.025,
+        subtitle_style: Optional[str] = None,
+        subtitle_position: Optional[str] = None,
+        bgm_folder: Optional[str] = None,
+        bgm_volume: Optional[float] = None
     ) -> List[str]:
         """
         Tự động cắt video dài thành nhiều Part bằng cách dùng Silence Detector để ngắt tại khoảng lặng câu
         """
         rendered_files = []
-        if total_duration <= part_duration + 10:
-            # Video ngắn -> Xử lý 1 part duy nhất
+        if total_duration <= part_duration + 10 or max_clips <= 1:
+            # Video ngắn hoặc chỉ yêu cầu 1 clip -> Xử lý 1 part duy nhất
             f = self.process_transformative_video(
                 input_file=input_file,
                 video_id=video_id,
                 part_number=1,
                 start_time=0.0,
-                duration=float(max(61, total_duration)),
+                duration=float(max(61, total_duration if total_duration <= part_duration + 10 else part_duration)),
                 channel_name=channel_name,
                 video_title=video_title,
-                output_dir=output_dir
+                output_dir=output_dir,
+                enable_subtitles=enable_subtitles,
+                flip_horizontal=flip_horizontal,
+                speed_factor=speed_factor,
+                add_part_label=add_part_label,
+                subtitle_style=subtitle_style,
+                subtitle_position=subtitle_position,
+                bgm_folder=bgm_folder,
+                bgm_volume=bgm_volume
             )
             if f:
                 rendered_files.append(f)
         else:
-            # Video dài -> Dò khoảng lặng và cắt theo từng Part
+            # Video dài -> Dò khoảng lặng và cắt theo từng Part (tối đa max_clips)
             current_start = 0.0
             part_idx = 1
-            max_parts = 5
+            max_parts = max_clips if max_clips < 100 else 99
 
             while current_start < (total_duration - 45) and part_idx <= max_parts:
                 # Tìm điểm cắt thông minh bằng silence detector
@@ -338,7 +450,15 @@ class AIVideoEngine:
                     duration=chunk_dur,
                     channel_name=channel_name,
                     video_title=video_title,
-                    output_dir=output_dir
+                    output_dir=output_dir,
+                    enable_subtitles=enable_subtitles,
+                    flip_horizontal=flip_horizontal,
+                    speed_factor=speed_factor,
+                    add_part_label=add_part_label,
+                    subtitle_style=subtitle_style,
+                    subtitle_position=subtitle_position,
+                    bgm_folder=bgm_folder,
+                    bgm_volume=bgm_volume
                 )
                 if f:
                     rendered_files.append(f)
@@ -362,7 +482,12 @@ class AIVideoEngine:
         flip_horizontal: bool = True,
         speed_factor: float = 1.03,
         add_part_label: bool = True,
-        generate_hook: bool = True
+        generate_hook: bool = True,
+        clips_count: int = 1,
+        subtitle_style: Optional[str] = None,
+        subtitle_position: Optional[str] = None,
+        bgm_folder: Optional[str] = None,
+        bgm_volume: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Quy trình xử lý AI trọn gói (End-to-End Enterprise SaaS Workflow):
@@ -372,7 +497,7 @@ class AIVideoEngine:
         4. Render video với toàn bộ bộ lọc chống quét bản quyền
         5. Cập nhật cơ sở dữ liệu và trả về kết quả hoàn chỉnh
         """
-        log_event("INFO", f"Bắt đầu chuỗi Smart AI Render cho video {video_id}: {video_title} (Model: {custom_model or 'Default'})")
+        log_event("INFO", f"Bắt đầu chuỗi Smart AI Render cho video {video_id}: {video_title} (Model: {custom_model or 'Default'}, clips_count: {clips_count})")
 
         # Bước 1: Transcribe âm thanh local
         transcript_segments = whisper_transcriber.transcribe(input_file, model_size=WHISPER_MODEL_SIZE)
@@ -403,8 +528,11 @@ class AIVideoEngine:
         description = curation["description"]
         hashtags = curation["hashtags"]
 
-        # Bước 3 & 4: Render video với phụ đề Karaoke và Anti-detection
+        # Bước 3 & 4: Render video Part 1 với phụ đề Karaoke và Anti-detection
         sub_enabled = enable_subtitles if enable_subtitles is not None else ENABLE_DYNAMIC_SUBTITLES
+        primary_hook = hook_3s.strip() if (hook_3s and hook_3s.strip()) else viral_title.strip()
+        part1_hook = primary_hook if generate_hook else None
+
         rendered_file = self.process_transformative_video(
             input_file=input_file,
             video_id=video_id,
@@ -416,11 +544,79 @@ class AIVideoEngine:
             output_dir=output_dir,
             enable_subtitles=sub_enabled,
             transcript_segments=transcript_segments,
-            hook_text=hook_3s if generate_hook else None,
+            hook_text=part1_hook,
             flip_horizontal=flip_horizontal,
             speed_factor=speed_factor,
-            add_part_label=add_part_label
+            add_part_label=add_part_label,
+            subtitle_style=subtitle_style,
+            subtitle_position=subtitle_position,
+            bgm_folder=bgm_folder,
+            bgm_volume=bgm_volume
         )
+
+        rendered_files = [rendered_file] if rendered_file else []
+
+        # Nếu yêu cầu cắt nhiều clip từ video này (clips_count > 1)
+        if clips_count > 1 and total_duration > (duration + 20):
+            curr_start = start_time + duration
+            part_num = 2
+            while part_num <= clips_count and curr_start < (total_duration - 20):
+                # 1. Tìm điểm cắt thông minh bằng silence detector (khoảng lặng kết thúc câu nói)
+                cut_point = silence_detector.get_optimal_cut_point(
+                    video_path=input_file,
+                    start_time=curr_start,
+                    target_duration=float(target_duration),
+                    min_duration=60.5,
+                    max_duration=float(target_duration + 20)
+                )
+
+                # 2. Nếu có transcript từ Whisper, snap chuẩn xác vào thời điểm kết thúc câu nói (tránh cắt giữa câu)
+                if transcript_segments:
+                    valid_sentence_ends = [
+                        seg["end"] for seg in transcript_segments
+                        if (curr_start + 60.5) <= seg.get("end", 0) <= min(total_duration, curr_start + target_duration + 25)
+                    ]
+                    if valid_sentence_ends:
+                        # Chọn mốc kết thúc câu tự nhiên gần với target_duration nhất
+                        cut_point = min(valid_sentence_ends, key=lambda e: abs(e - (curr_start + target_duration)))
+
+                part_dur = max(60.5, cut_point - curr_start)
+                if (curr_start + part_dur) > total_duration:
+                    part_dur = max(60.0, total_duration - curr_start)
+
+                if generate_hook:
+                    if add_part_label:
+                        # Badge PART X đã hiển thị ở Y=140 nên banner chỉ cần nội dung hook nguyên vẹn, không lặp lại "Part X - "
+                        part_hook = primary_hook
+                    else:
+                        part_hook = f"Part {part_num} - {primary_hook}"
+                else:
+                    part_hook = None
+
+                next_p = self.process_transformative_video(
+                    input_file=input_file,
+                    video_id=video_id,
+                    part_number=part_num,
+                    start_time=curr_start,
+                    duration=part_dur,
+                    channel_name=channel_name,
+                    video_title=f"{viral_title} Part {part_num}",
+                    output_dir=output_dir,
+                    enable_subtitles=sub_enabled,
+                    transcript_segments=transcript_segments,
+                    hook_text=part_hook,
+                    flip_horizontal=flip_horizontal,
+                    speed_factor=speed_factor,
+                    add_part_label=add_part_label,
+                    subtitle_style=subtitle_style,
+                    subtitle_position=subtitle_position,
+                    bgm_folder=bgm_folder,
+                    bgm_volume=bgm_volume
+                )
+                if next_p:
+                    rendered_files.append(next_p)
+                curr_start = cut_point
+                part_num += 1
 
         # Cập nhật thông tin AI Copy vào Database
         if rendered_file:
@@ -440,6 +636,7 @@ class AIVideoEngine:
         return {
             "status": "success" if rendered_file else "failed",
             "rendered_file": rendered_file,
+            "rendered_files": rendered_files,
             "curation": curation,
             "ai_hook": hook_3s,
             "ai_title": viral_title,

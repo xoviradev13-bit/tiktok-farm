@@ -66,13 +66,15 @@ def set_autostart(enabled: bool) -> bool:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE)
         try:
             if enabled:
-                # Ưu tiên dùng pythonw.exe để không hiện cửa sổ console đen khi bật máy
-                py_dir = os.path.dirname(sys.executable)
-                pyw = os.path.join(py_dir, "pythonw.exe")
-                exe = pyw if os.path.exists(pyw) else sys.executable
-                
-                main_py = get_main_script_path()
-                cmd = f'"{exe}" "{main_py}" --minimized'
+                if getattr(sys, "frozen", False):
+                    cmd = f'"{sys.executable}" --minimized'
+                else:
+                    # Ưu tiên dùng pythonw.exe để không hiện cửa sổ console đen khi bật máy
+                    py_dir = os.path.dirname(sys.executable)
+                    pyw = os.path.join(py_dir, "pythonw.exe")
+                    exe = pyw if os.path.exists(pyw) else sys.executable
+                    main_py = get_main_script_path()
+                    cmd = f'"{exe}" "{main_py}" --minimized'
                 winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, cmd)
                 log_event("INFO", f"[TrayManager] Đã BẬT khởi động cùng Windows: {cmd}")
             else:
@@ -130,10 +132,15 @@ def set_minimize_to_tray(enabled: bool):
 # ─── TRAY ICON GENERATOR ──────────────────────────────────────────────────────
 
 def get_tray_image() -> Image.Image:
-    """Tải icon ứng dụng từ thư mục extension hoặc vẽ icon TikTok gradient nếu thiếu"""
+    """Tải icon ứng dụng từ thư mục logo hoặc vẽ icon TikTok gradient nếu thiếu"""
+    from backend.config import LOGO_DIR, BASE_DIR
     icon_paths = [
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "extension", "icons", "icon128.png")),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "extension", "icons", "icon48.png")),
+        str(LOGO_DIR / "app-logo.png"),
+        str(LOGO_DIR / "app-logo.ico"),
+        str(BASE_DIR / "logo" / "app-logo.png"),
+        str(BASE_DIR / "logo" / "app-logo.ico"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "logo", "app-logo.png")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "logo", "app-logo.ico")),
     ]
     for p in icon_paths:
         if os.path.isfile(p):

@@ -11,6 +11,11 @@ if sys.platform == "win32":
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TikTokFarm.AutoTool.App.1.0")
+    except Exception:
+        pass
 try:
     import webview
 except ImportError:
@@ -51,6 +56,45 @@ def start_server():
     config = uvicorn.Config("backend.app:app", host=SERVER_HOST, port=SERVER_PORT, log_level="warning")
     server = uvicorn.Server(config)
     server.run()
+
+def apply_native_window_icon(window_title: str):
+    """Gán icon thương hiệu TikTok Farm vào thanh tiêu đề Native Window (thay thế icon Python)"""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from backend.config import APP_ICON_PATH, BASE_DIR
+
+    icon_paths = [
+        str(APP_ICON_PATH),
+        str(BASE_DIR / "logo" / "app-logo.ico"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "logo", "app-logo.ico")),
+    ]
+    icon_file = next((p for p in icon_paths if os.path.isfile(p)), None)
+    if not icon_file:
+        return
+
+    WM_SETICON = 0x0080
+    ICON_SMALL = 0
+    ICON_BIG = 1
+    IMAGE_ICON = 1
+    LR_LOADFROMFILE = 0x00000010
+    LR_DEFAULTSIZE = 0x00000040
+
+    user32 = ctypes.windll.user32
+    h_icon = user32.LoadImageW(None, icon_file, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE)
+    if not h_icon:
+        return
+
+    def _apply():
+        for _ in range(40):
+            time.sleep(0.15)
+            hwnd = user32.FindWindowW(None, window_title)
+            if hwnd:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, h_icon)
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, h_icon)
+                break
+
+    threading.Thread(target=_apply, daemon=True).start()
 
 if __name__ == "__main__":
     init_db()
@@ -103,8 +147,9 @@ if __name__ == "__main__":
     # Chạy giao diện Desktop trên Main Thread (Bắt buộc cho Windows GUI)
     if webview:
         try:
+            window_title = "TikTok Auto Farm & AI Video Engine"
             window = webview.create_window(
-                "TikTok Auto Farm & AI Video Engine (GPMLogin)",
+                window_title,
                 dashboard_url,
                 width=1380,
                 height=860,
@@ -114,6 +159,7 @@ if __name__ == "__main__":
             )
             # Kết nối cửa sổ với System Tray
             setup_tray(window)
+            apply_native_window_icon(window_title)
             if is_minimized_boot:
                 print("🔒 [BOOT] Khởi động ngầm thành công. Ứng dụng đang chạy trong Khay Hệ Thống.")
             webview.start()
@@ -130,3 +176,4 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n[STOP] Đã dừng ứng dụng.")
+

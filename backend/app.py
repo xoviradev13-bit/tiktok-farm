@@ -4,12 +4,16 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from backend.config import BASE_DIR, SERVER_HOST, SERVER_PORT, save_env_config, YOUTUBE_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GEMINI_API_KEY, OPENAI_API_KEY, GPM_API_BASE_URL
+from backend.config import (
+    BASE_DIR, FRONTEND_DIR, LOGO_DIR, SERVER_HOST, SERVER_PORT, save_env_config,
+    YOUTUBE_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GEMINI_API_KEY, OPENAI_API_KEY, GPM_API_BASE_URL,
+    MUSIC_DIR
+)
 from backend.database import get_connection, log_event, log_campaign_event
 from backend.modules.gpm_client import gpm_client
 from backend.modules.yt_scanner import yt_scanner
@@ -20,6 +24,7 @@ from backend.modules.metrics_tracker import metrics_tracker
 from backend.modules.notifier import notifier
 from backend.modules.yt_monitor import yt_monitor
 from backend.modules.tiktok_tracker import tiktok_tracker
+from backend.modules.audio_manager import audio_manager, sanitize_audio_filename, ALLOWED_AUDIO_EXTENSIONS
 from backend.scheduler import scheduler
 from backend.config import LOG_FILE_PATH
 from backend.logger import (
@@ -64,6 +69,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    first_error = exc.errors()[0] if exc.errors() else {}
+    msg = first_error.get("msg", "Dữ liệu đầu vào không hợp lệ!")
+    field = " -> ".join(str(l) for l in first_error.get("loc", []) if l != "body")
+    error_text = f"Dữ liệu không hợp lệ tại [{field}]: {msg}" if field else f"Dữ liệu không hợp lệ: {msg}"
+    return JSONResponse(
+        status_code=400,
+        content={"status": "error", "message": error_text, "detail": error_text, "errors": exc.errors()}
+    )
+
 def is_safe_external_url(url_str: str) -> bool:
     """Kiểm tra URL an toàn chống SSRF (OWASP A10 / NIST SP 800-218)"""
     try:
@@ -87,7 +105,24 @@ def is_safe_external_url(url_str: str) -> bool:
     except Exception:
         return False
 
-FRONTEND_DIR = BASE_DIR / "frontend"
+def is_valid_folder_name(name: str) -> bool:
+    """Kiểm tra tên thư mục hợp lệ trên hệ điều hành Windows/Linux"""
+    if not name or not name.strip():
+        return False
+    stripped = name.strip()
+    if any(c in r'<>:"/\|?*' for c in stripped):
+        return False
+    if stripped.startswith(".") or stripped.endswith("."):
+        return False
+    if ".." in stripped:
+        return False
+    return True
+
+def is_valid_hhmm(t_str: str) -> bool:
+    """Kiểm tra định dạng thời gian HH:MM (00:00 - 23:59)"""
+    if not t_str:
+        return False
+    return bool(re.match(r"^([01]\d|2[0-3]):[0-5]\d$", t_str.strip()))
 
 # --- Models ---
 class SearchKeywordRequest(BaseModel):
@@ -99,6 +134,8 @@ class UnsaveChannelRequest(BaseModel):
 
 class DownloadVideoRequest(BaseModel):
     url: str
+    target_dir: Optional[str] = None
+    is_studio: bool = True
 
 class RenderVideoRequest(BaseModel):
     video_id: str
@@ -109,6 +146,12 @@ class RenderVideoRequest(BaseModel):
     enable_subtitles: Optional[bool] = None
     ai_provider: Optional[str] = None
     ai_model: Optional[str] = None
+    clips_count: Optional[int] = 1
+    add_part_label: Optional[bool] = True
+    subtitle_style: Optional[str] = None
+    subtitle_position: Optional[str] = None
+    bgm_folder: Optional[str] = None
+    bgm_volume: Optional[float] = None
 
 class SmartRenderVideoRequest(BaseModel):
     video_id: str
@@ -120,6 +163,11 @@ class SmartRenderVideoRequest(BaseModel):
     speed_factor: float = 1.03
     add_part_label: bool = True
     generate_hook: bool = True
+    clips_count: Optional[int] = 1
+    subtitle_style: Optional[str] = None
+    subtitle_position: Optional[str] = None
+    bgm_folder: Optional[str] = None
+    bgm_volume: Optional[float] = None
 
 class UploadVideoRequest(BaseModel):
     gpm_profile_id: str
@@ -136,11 +184,42 @@ class UpdateProfileStatsRequest(BaseModel):
 class UpdateProfileUsernameRequest(BaseModel):
     username: str
 
+class UpdateProfileNotifyStatusRequest(BaseModel):
+    status: str
+
 class FollowerSchedulerRequest(BaseModel):
     enabled: bool
     mode: str = "daily_times"
     times: Optional[str] = "08:00, 20:00"
     interval_hours: Optional[int] = 6
+
+class SearchAudioRequest(BaseModel):
+    keyword: str
+    max_results: int = 50
+
+class CreateCategoryRequest(BaseModel):
+    name: str
+    display_name: Optional[str] = None
+
+class RenameCategoryRequest(BaseModel):
+    old_id: str
+    new_name: str
+    display_name: Optional[str] = None
+
+class AudioSettingsRequest(BaseModel):
+    music_dir: Optional[str] = None
+    max_size_mb: Optional[int] = 50
+    default_bitrate: Optional[str] = "192k"
+    max_search_results: Optional[int] = 50
+    normalize_audio: Optional[bool] = True
+
+class DownloadYtAudioRequest(BaseModel):
+    url: str
+    category: str = "general"
+
+class DeleteAudioRequest(BaseModel):
+    category: str
+    filename: str
 
 class UpdateChannelSettingsRequest(BaseModel):
     channel_id: str
@@ -151,6 +230,8 @@ class UpdateChannelSettingsRequest(BaseModel):
     is_active: Optional[int] = 1
     auto_download: Optional[int] = 1
     auto_render: Optional[int] = 1
+    bgm_folder: Optional[str] = ""
+    bgm_volume: Optional[float] = 0.15
 
 class ToggleChannelStatusRequest(BaseModel):
     channel_id: str
@@ -159,6 +240,7 @@ class ToggleChannelStatusRequest(BaseModel):
 class ClearChannelHistoryRequest(BaseModel):
     channel_id: str
     delete_files: bool = True
+    target: Optional[str] = "all"  # "all", "downloaded", "rendered"
 
 class ScanChannelRequest(BaseModel):
     channel_id: str
@@ -175,6 +257,9 @@ class SaveApiKeysRequest(BaseModel):
     whisper_model_size: Optional[str] = "base"
     enable_dynamic_subtitles: Optional[bool] = True
     enable_anti_detect: Optional[bool] = True
+    subtitle_style: Optional[str] = "karaoke_yellow"
+    subtitle_position: Optional[str] = "center"
+    subtitle_font_size: Optional[int] = 54
     telegram_bot_token: Optional[str] = ""
     telegram_chat_id: Optional[str] = ""
     gpm_api_base_url: Optional[str] = ""
@@ -187,11 +272,31 @@ class TelegramChannelCreateRequest(BaseModel):
     name: str
     chat_id: str
     is_active: Optional[bool] = True
+    notify_10k: Optional[bool] = True
+    notify_issues: Optional[bool] = True
+    notify_daily_report: Optional[bool] = True
+    daily_report_time: Optional[str] = "21:00"
 
 class TelegramChannelUpdateRequest(BaseModel):
     name: str
     chat_id: str
     is_active: Optional[bool] = True
+    notify_10k: Optional[bool] = True
+    notify_issues: Optional[bool] = True
+    notify_daily_report: Optional[bool] = True
+    daily_report_time: Optional[str] = "21:00"
+
+class TelegramSendReportRequest(BaseModel):
+    report_date: Optional[str] = None
+    channel_id: Optional[int] = None
+
+class TelegramSendIssueRequest(BaseModel):
+    title: str
+    message: str
+    solution: Optional[str] = ""
+    severity: Optional[str] = "ERROR"
+    details: Optional[str] = ""
+    channel_id: Optional[int] = None
 
 class TestApiKeyRequest(BaseModel):
     key: str
@@ -212,17 +317,22 @@ class CreateCampaignRequest(BaseModel):
     video_duration: Optional[int] = 65
     speed_factor: Optional[float] = 1.03
     flip_horizontal: Optional[int] = 1
+    add_part_label: Optional[int] = 1
+    clips_per_video: Optional[int] = 3
     daily_limit: Optional[int] = 3
     post_schedule: Optional[str] = "11:30, 18:00, 20:30"
     post_frequency: Optional[str] = "daily"
     post_interval_days: Optional[int] = 1
     post_days_of_week: Optional[str] = "mon,tue,wed,thu,fri,sat,sun"
     random_delay_minutes: Optional[int] = 10
+    min_post_interval_minutes: Optional[int] = None
     warmup_mode: Optional[int] = 0
     ai_provider: Optional[str] = "default"
     ai_model: Optional[str] = "default"
     min_video_duration: Optional[int] = None
     max_video_duration: Optional[int] = None
+    bgm_folder: Optional[str] = ""
+    bgm_volume: Optional[float] = 0.15
     is_active: Optional[int] = 1
 
 class DownloadFilterSettingsRequest(BaseModel):
@@ -404,15 +514,17 @@ def check_gpm_health():
 
 @app.post("/api/gpm/sync")
 def sync_gpm_profiles():
-    """Đồng bộ toàn bộ danh sách profile từ GPMLogin vào database"""
+    """Đồng bộ toàn bộ danh sách profile từ GPMLogin vào database (thêm mới, cập nhật và xóa profile đã bị xóa trên GPM)"""
     profiles = gpm_client.get_profiles()
     if not profiles:
         return {"status": "warning", "message": "Không tìm thấy profile nào từ GPMLogin (hoặc GPM chưa mở)", "synced": 0}
 
     conn = get_connection()
     cursor = conn.cursor()
+    active_gpm_ids = set()
     synced = 0
     for p in profiles:
+        active_gpm_ids.add(p["id"])
         cursor.execute('''
         INSERT INTO gpm_profiles (gpm_id, name, raw_proxy)
         VALUES (?, ?, ?)
@@ -421,11 +533,25 @@ def sync_gpm_profiles():
             raw_proxy = excluded.raw_proxy
         ''', (p["id"], p["name"], p["raw_proxy"]))
         synced += 1
+
+    # Xóa các profile trong DB mà không còn tồn tại trên GPMLogin
+    removed_count = 0
+    if active_gpm_ids:
+        cursor.execute("SELECT gpm_id, name FROM gpm_profiles")
+        for db_p in cursor.fetchall():
+            if db_p["gpm_id"] not in active_gpm_ids:
+                cursor.execute("DELETE FROM gpm_profiles WHERE gpm_id = ?", (db_p["gpm_id"],))
+                removed_count += 1
+                log_event("INFO", f"Tự động gỡ bỏ profile '{db_p['name']}' ({db_p['gpm_id']}) do đã bị xóa trên GPMLogin.")
+
     conn.commit()
     conn.close()
 
-    log_event("INFO", f"Đã đồng bộ {synced} profile từ GPMLogin")
-    return {"status": "success", "synced": synced}
+    msg = f"Đã đồng bộ {synced} profile từ GPMLogin"
+    if removed_count > 0:
+        msg += f" (đã gỡ bỏ {removed_count} profile không còn tồn tại)"
+    log_event("INFO", msg)
+    return {"status": "success", "synced": synced, "removed": removed_count, "message": msg}
 
 @app.get("/api/gpm/profiles")
 def list_gpm_profiles():
@@ -458,7 +584,12 @@ def delete_gpm_profile(gpm_id: str):
 @app.post("/api/youtube/search")
 def search_youtube_channels(req: SearchKeywordRequest):
     """Tìm kiếm và lọc kênh theo từ khóa và tần suất ra video"""
-    results = yt_scanner.search_channels_by_keyword(req.keyword, req.max_results)
+    kw = (req.keyword or "").strip()
+    if not kw:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập từ khóa tìm kiếm YouTube!")
+    if req.max_results < 1 or req.max_results > 50:
+        raise HTTPException(status_code=400, detail="Số lượng kênh tìm kiếm phải từ 1 đến 50!")
+    results = yt_scanner.search_channels_by_keyword(kw, req.max_results)
 
     # Đánh dấu các kênh đã lưu trong DB
     try:
@@ -552,6 +683,12 @@ def get_channel_detail(channel_id: str):
 
 @app.post("/api/youtube/channels/update")
 def update_channel_settings(req: UpdateChannelSettingsRequest):
+    cid = (req.channel_id or "").strip()
+    if not cid:
+        raise HTTPException(status_code=400, detail="Mã kênh YouTube (channel_id) không được để trống!")
+    if req.bgm_volume is not None and (req.bgm_volume < 0.0 or req.bgm_volume > 1.0):
+        raise HTTPException(status_code=400, detail="Âm lượng nhạc nền BGM phải từ 0.0 đến 1.0!")
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -562,7 +699,9 @@ def update_channel_settings(req: UpdateChannelSettingsRequest):
             render_dir = ?,
             is_active = ?,
             auto_download = ?,
-            auto_render = ?
+            auto_render = ?,
+            bgm_folder = ?,
+            bgm_volume = ?
         WHERE channel_id = ?
     ''', (
         req.display_name or '',
@@ -572,6 +711,8 @@ def update_channel_settings(req: UpdateChannelSettingsRequest):
         1 if req.is_active else 0,
         1 if req.auto_download else 0,
         1 if req.auto_render else 0,
+        req.bgm_folder or '',
+        float(req.bgm_volume) if req.bgm_volume is not None else 0.15,
         req.channel_id
     ))
     conn.commit()
@@ -603,36 +744,141 @@ def toggle_channel_status(req: ToggleChannelStatusRequest):
 def clear_channel_history(req: ClearChannelHistoryRequest):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, download_path, rendered_path FROM videos WHERE channel_id = ?", (req.channel_id,))
-    rows = cursor.fetchall()
+    target = (req.target or "all").lower()
 
     files_deleted = 0
-    if req.delete_files:
+    deleted_count = 0
+
+    if target == "downloaded":
+        cursor.execute("SELECT id, download_path, rendered_path FROM videos WHERE channel_id = ? AND download_path IS NOT NULL AND download_path != ''", (req.channel_id,))
+        rows = cursor.fetchall()
         for r in rows:
-            if r["download_path"] and os.path.exists(r["download_path"]):
+            if req.delete_files and r["download_path"] and os.path.exists(r["download_path"]):
                 try:
                     os.remove(r["download_path"])
                     files_deleted += 1
                 except Exception:
                     pass
-            if r["rendered_path"] and os.path.exists(r["rendered_path"]):
+            if r["rendered_path"]:
+                cursor.execute("UPDATE videos SET download_path = NULL WHERE id = ?", (r["id"],))
+                deleted_count += 1
+            else:
+                cursor.execute("DELETE FROM videos WHERE id = ?", (r["id"],))
+                deleted_count += 1
+        log_msg = f"Đã xóa lịch sử {deleted_count} video đã tải ({files_deleted} files) của kênh {req.channel_id}"
+
+    elif target == "rendered":
+        cursor.execute("SELECT id, download_path, rendered_path FROM videos WHERE channel_id = ? AND rendered_path IS NOT NULL AND rendered_path != ''", (req.channel_id,))
+        rows = cursor.fetchall()
+        for r in rows:
+            if req.delete_files and r["rendered_path"] and os.path.exists(r["rendered_path"]):
                 try:
                     os.remove(r["rendered_path"])
                     files_deleted += 1
                 except Exception:
                     pass
+            if r["download_path"]:
+                cursor.execute("UPDATE videos SET rendered_path = NULL, status = 'downloaded' WHERE id = ?", (r["id"],))
+                deleted_count += 1
+            else:
+                cursor.execute("DELETE FROM videos WHERE id = ?", (r["id"],))
+                deleted_count += 1
+        log_msg = f"Đã xóa lịch sử {deleted_count} video đã render ({files_deleted} files) của kênh {req.channel_id}"
 
-    cursor.execute("DELETE FROM videos WHERE channel_id = ?", (req.channel_id,))
-    deleted_count = cursor.rowcount
+    else:
+        cursor.execute("SELECT id, download_path, rendered_path FROM videos WHERE channel_id = ?", (req.channel_id,))
+        rows = cursor.fetchall()
+        if req.delete_files:
+            for r in rows:
+                if r["download_path"] and os.path.exists(r["download_path"]):
+                    try:
+                        os.remove(r["download_path"])
+                        files_deleted += 1
+                    except Exception:
+                        pass
+                if r["rendered_path"] and os.path.exists(r["rendered_path"]):
+                    try:
+                        os.remove(r["rendered_path"])
+                        files_deleted += 1
+                    except Exception:
+                        pass
+
+        cursor.execute("DELETE FROM videos WHERE channel_id = ?", (req.channel_id,))
+        deleted_count = cursor.rowcount
+        log_msg = f"Đã xóa lịch sử {deleted_count} video ({files_deleted} files) của kênh {req.channel_id}"
+
     conn.commit()
     conn.close()
-    log_event("INFO", f"Đã xóa lịch sử {deleted_count} video ({files_deleted} files) của kênh {req.channel_id}")
-    return {"status": "success", "deleted_videos": deleted_count, "files_deleted": files_deleted}
+    log_event("INFO", log_msg)
+    return {"status": "success", "deleted_videos": deleted_count, "files_deleted": files_deleted, "target": target}
 
 @app.post("/api/youtube/channels/scan-now")
 def scan_channel_now(req: ScanChannelRequest):
     result = yt_monitor.scan_single_channel(req.channel_id)
     return result
+
+@app.get("/api/channels/{channel_id}/videos")
+def get_channel_videos(channel_id: str):
+    """Lấy danh sách toàn bộ video và trạng thái render thuộc một kênh theo dõi"""
+    sync_local_videos_with_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT v.*, COALESCE(c.display_name, c.title, 'Kênh Nguồn') as channel_name, c.render_dir as ch_render_dir
+        FROM videos v
+        LEFT JOIN channels c ON v.channel_id = c.channel_id
+        WHERE v.channel_id = ?
+        ORDER BY v.id DESC
+    """, (channel_id,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+
+    from backend.config import RENDERED_DIR
+    for r in rows:
+        vid_id = r.get("yt_video_id") or ""
+        rendered_parts = []
+        dirs_to_check = []
+        if r.get("rendered_path") and os.path.exists(r["rendered_path"]):
+            parent_dir = Path(r["rendered_path"]).parent
+            if parent_dir not in dirs_to_check:
+                dirs_to_check.append(parent_dir)
+        if r.get("ch_render_dir") and os.path.exists(r["ch_render_dir"]):
+            ch_dir = Path(r["ch_render_dir"])
+            if ch_dir not in dirs_to_check:
+                dirs_to_check.append(ch_dir)
+        if RENDERED_DIR not in dirs_to_check and RENDERED_DIR.exists():
+            dirs_to_check.append(RENDERED_DIR)
+
+        found_files = set()
+        for d in dirs_to_check:
+            if vid_id and os.path.exists(d):
+                for p in Path(d).rglob(f"*{vid_id}*.mp4"):
+                    if str(p) not in found_files:
+                        found_files.add(str(p))
+                        part_m = re.search(r'Part(\d+)', p.name, re.IGNORECASE)
+                        p_num = int(part_m.group(1)) if part_m else 1
+                        rendered_parts.append({
+                            "part": p_num,
+                            "filename": p.name,
+                            "path": str(p),
+                            "url": f"/api/video/stream/{r['id']}?type=rendered&part={p_num}"
+                        })
+
+        part_map = {}
+        for rp in rendered_parts:
+            p_num = rp["part"]
+            mtime = os.path.getmtime(rp["path"]) if os.path.exists(rp["path"]) else 0
+            if p_num not in part_map or mtime > part_map[p_num]["mtime"]:
+                part_map[p_num] = {"rp": rp, "mtime": mtime}
+        rendered_parts = [v["rp"] for k, v in sorted(part_map.items())]
+        r["rendered_parts"] = rendered_parts
+
+        has_raw = bool(r.get("download_path") and os.path.exists(r["download_path"]))
+        has_rendered = len(rendered_parts) > 0 or bool(r.get("rendered_path") and os.path.exists(r["rendered_path"]))
+        r["has_raw"] = has_raw
+        r["has_rendered"] = has_rendered
+
+    return {"status": "success", "videos": rows, "count": len(rows)}
 
 @app.get("/api/pipeline/status")
 def get_pipeline_status():
@@ -726,6 +972,39 @@ def toggle_pipeline_scheduler():
     except Exception:
         pass
     return {"status": "success", "running": state, "scheduler_running": state}
+
+@app.post("/api/pipeline/retry-upload/{task_id}")
+def retry_upload_task(task_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM upload_tasks WHERE id = ?", (task_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ upload")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        UPDATE upload_tasks 
+        SET status = 'queued', 
+            scheduled_time = ?, 
+            retry_count = 0, 
+            retry_after = NULL, 
+            processing_started_at = NULL, 
+            error_message = NULL 
+        WHERE id = ?
+    """, (now_str, task_id))
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": f"Đã đưa tác vụ #{task_id} trở lại hàng đợi đăng bài ngay lập tức"}
+
+@app.post("/api/pipeline/process-uploads")
+def trigger_process_uploads(bg_tasks: BackgroundTasks):
+    def _run_upload():
+        try:
+            scheduler._process_pending_uploads()
+        except Exception as e:
+            log_event("WARNING", f"Lỗi thủ công xử lý hàng đợi upload: {e}")
+    bg_tasks.add_task(_run_upload)
+    return {"status": "success", "message": "Đã kích hoạt kiểm tra và đăng hàng đợi upload"}
 
 @app.post("/api/pipeline/scan-all")
 def scan_all_channels_pipeline(bg_tasks: BackgroundTasks):
@@ -871,6 +1150,8 @@ def get_cleanup_settings():
 
 @app.post("/api/settings/cleanup")
 def save_cleanup_settings(req: CleanupSettingsRequest):
+    if req.custom_days is not None and (req.custom_days < 1 or req.custom_days > 3650):
+        raise HTTPException(status_code=400, detail="Số ngày dọn dẹp tùy chỉnh phải từ 1 đến 3650 ngày!")
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('cleanup_retention_mode', ?)", (req.retention_mode,))
@@ -903,6 +1184,10 @@ def get_download_filter_settings():
 
 @app.post("/api/settings/download-filter")
 def save_download_filter_settings(req: DownloadFilterSettingsRequest):
+    if req.min_video_duration < 0:
+        raise HTTPException(status_code=400, detail="Thời lượng tối thiểu không thể là số âm!")
+    if req.max_video_duration <= req.min_video_duration:
+        raise HTTPException(status_code=400, detail="Thời lượng tối đa phải lớn hơn thời lượng tối thiểu!")
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('download_min_duration', ?)", (str(req.min_video_duration),))
@@ -955,15 +1240,56 @@ def list_campaigns():
         r["gpm_count"] = len(gpm_list)
     return rows
 
+def sanitize_campaign_schedule(raw_str: str) -> str:
+    """Kiểm tra và chuẩn hóa khung giờ đăng bài HH:MM"""
+    if not raw_str:
+        return "11:30, 18:00, 20:30"
+    valid_slots = []
+    for part in str(raw_str).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$", part)
+        if m:
+            h, m_val = int(m.group(1)), int(m.group(2))
+            valid_slots.append(f"{h:02d}:{m_val:02d}")
+    if not valid_slots:
+        return "11:30, 18:00, 20:30"
+    seen = set()
+    clean = []
+    for s in valid_slots:
+        if s not in seen:
+            seen.add(s)
+            clean.append(s)
+    return ", ".join(clean)
+
 @app.post("/api/campaigns")
 def create_campaign(req: CreateCampaignRequest):
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="Tên chiến dịch không được để trống!")
+    ch_ids = req.channel_ids if req.channel_ids else ([req.channel_id] if req.channel_id else [])
+    if not ch_ids:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một kênh YouTube nguồn!")
+    gpm_ids = req.gpm_profile_ids if req.gpm_profile_ids else ([req.gpm_profile_id] if req.gpm_profile_id else [])
+    if not gpm_ids:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một Profile GPMLogin đích!")
+    if req.min_video_duration is not None and req.max_video_duration is not None:
+        if req.min_video_duration >= req.max_video_duration:
+            raise HTTPException(status_code=400, detail="Thời lượng cắt tối thiểu phải nhỏ hơn thời lượng tối đa!")
+    if req.clips_per_video is not None and (req.clips_per_video < 1 or req.clips_per_video > 20):
+        raise HTTPException(status_code=400, detail="Số đoạn cắt mỗi video phải từ 1 đến 20!")
+    if req.bgm_volume is not None and (req.bgm_volume < 0.0 or req.bgm_volume > 1.0):
+        raise HTTPException(status_code=400, detail="Âm lượng nhạc nền BGM phải từ 0.0 đến 1.0!")
+
     conn = get_connection()
     cursor = conn.cursor()
 
-    ch_ids = req.channel_ids if req.channel_ids else ([req.channel_id] if req.channel_id else [])
-    gpm_ids = req.gpm_profile_ids if req.gpm_profile_ids else ([req.gpm_profile_id] if req.gpm_profile_id else [])
     main_ch = ch_ids[0] if ch_ids else ""
     main_gpm = gpm_ids[0] if gpm_ids else None
+
+    # Validate daily_limit: can't be smaller than 1 and must be positive integer
+    safe_daily_limit = max(1, int(req.daily_limit or 1))
+    safe_schedule = sanitize_campaign_schedule(req.post_schedule)
 
     cursor.execute('''
         INSERT INTO campaigns (
@@ -973,9 +1299,10 @@ def create_campaign(req: CreateCampaignRequest):
             speed_factor, flip_horizontal, daily_limit, post_schedule,
             post_frequency, post_interval_days, post_days_of_week,
             random_delay_minutes, warmup_mode, ai_provider, ai_model,
-            min_video_duration, max_video_duration, is_active
+            min_video_duration, max_video_duration, add_part_label, clips_per_video,
+            bgm_folder, bgm_volume, is_active, min_post_interval_minutes
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         req.name,
         main_ch,
@@ -992,8 +1319,8 @@ def create_campaign(req: CreateCampaignRequest):
         req.video_duration or 65,
         req.speed_factor or 1.03,
         1 if req.flip_horizontal else 0,
-        req.daily_limit or 3,
-        req.post_schedule or '11:30, 18:00, 20:30',
+        safe_daily_limit,
+        safe_schedule,
         req.post_frequency or 'daily',
         req.post_interval_days or 1,
         req.post_days_of_week or 'mon,tue,wed,thu,fri,sat,sun',
@@ -1003,7 +1330,12 @@ def create_campaign(req: CreateCampaignRequest):
         req.ai_model or 'default',
         req.min_video_duration,
         req.max_video_duration,
-        1 if req.is_active else 0
+        1 if req.add_part_label != 0 else 0,
+        req.clips_per_video or 3,
+        req.bgm_folder or '',
+        float(req.bgm_volume) if req.bgm_volume is not None else 0.15,
+        1 if req.is_active else 0,
+        req.min_post_interval_minutes
     ))
     campaign_id = cursor.lastrowid
     # Persist last used download/render dirs in settings table for future campaigns
@@ -1067,10 +1399,34 @@ def update_campaign(campaign_id: int, req: CreateCampaignRequest):
         conn.close()
         raise HTTPException(status_code=404, detail="Không tìm thấy chiến dịch để cập nhật")
 
+    if not req.name or not req.name.strip():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Tên chiến dịch không được để trống!")
     ch_ids = req.channel_ids if req.channel_ids else ([req.channel_id] if req.channel_id else [])
+    if not ch_ids:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một kênh YouTube nguồn!")
     gpm_ids = req.gpm_profile_ids if req.gpm_profile_ids else ([req.gpm_profile_id] if req.gpm_profile_id else [])
+    if not gpm_ids:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một Profile GPMLogin đích!")
+    if req.min_video_duration is not None and req.max_video_duration is not None:
+        if req.min_video_duration >= req.max_video_duration:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Thời lượng cắt tối thiểu phải nhỏ hơn thời lượng tối đa!")
+    if req.clips_per_video is not None and (req.clips_per_video < 1 or req.clips_per_video > 20):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Số đoạn cắt mỗi video phải từ 1 đến 20!")
+    if req.bgm_volume is not None and (req.bgm_volume < 0.0 or req.bgm_volume > 1.0):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Âm lượng nhạc nền BGM phải từ 0.0 đến 1.0!")
+
     main_ch = ch_ids[0] if ch_ids else ""
     main_gpm = gpm_ids[0] if gpm_ids else None
+
+    # Validate daily_limit: can't be smaller than 1 and must be positive integer
+    safe_daily_limit = max(1, int(req.daily_limit or 1))
+    safe_schedule = sanitize_campaign_schedule(req.post_schedule)
 
     cursor.execute('''
         UPDATE campaigns SET
@@ -1099,7 +1455,12 @@ def update_campaign(campaign_id: int, req: CreateCampaignRequest):
             ai_provider = ?,
             ai_model = ?,
             min_video_duration = ?,
-            max_video_duration = ?
+            max_video_duration = ?,
+            add_part_label = ?,
+            clips_per_video = ?,
+            bgm_folder = ?,
+            bgm_volume = ?,
+            min_post_interval_minutes = ?
         WHERE id = ?
     ''', (
         req.name,
@@ -1117,8 +1478,8 @@ def update_campaign(campaign_id: int, req: CreateCampaignRequest):
         req.video_duration or 65,
         req.speed_factor or 1.03,
         1 if req.flip_horizontal else 0,
-        req.daily_limit or 3,
-        req.post_schedule or '11:30, 18:00, 20:30',
+        safe_daily_limit,
+        safe_schedule,
         req.post_frequency or 'daily',
         req.post_interval_days or 1,
         req.post_days_of_week or 'mon,tue,wed,thu,fri,sat,sun',
@@ -1128,6 +1489,11 @@ def update_campaign(campaign_id: int, req: CreateCampaignRequest):
         req.ai_model or 'default',
         req.min_video_duration,
         req.max_video_duration,
+        1 if req.add_part_label != 0 else 0,
+        req.clips_per_video or 3,
+        req.bgm_folder or '',
+        float(req.bgm_volume) if req.bgm_volume is not None else 0.15,
+        req.min_post_interval_minutes,
         campaign_id
     ))
     if req.download_dir:
@@ -1167,36 +1533,41 @@ def get_campaign_logs(campaign_id: int):
     except Exception:
         if camp.get("gpm_profile_id"): gpm_ids = [camp["gpm_profile_id"]]
 
-    # Thống kê video liên quan đến các kênh của chiến dịch này
+    # Thống kê video liên quan đến các kênh của chiến dịch này (an toàn cho hàng ngàn kênh)
     total_videos = 0
     downloaded_videos = 0
     rendered_videos = 0
     if ch_ids:
-        placeholders = ",".join("?" for _ in ch_ids)
-        cursor.execute(f"SELECT COUNT(*) FROM videos WHERE channel_id IN ({placeholders})", tuple(ch_ids))
-        total_videos = cursor.fetchone()[0]
-        cursor.execute(f"SELECT COUNT(*) FROM videos WHERE channel_id IN ({placeholders}) AND download_path IS NOT NULL AND download_path != ''", tuple(ch_ids))
-        downloaded_videos = cursor.fetchone()[0]
-        cursor.execute(f"SELECT COUNT(*) FROM videos WHERE channel_id IN ({placeholders}) AND rendered_path IS NOT NULL AND rendered_path != ''", tuple(ch_ids))
-        rendered_videos = cursor.fetchone()[0]
+        for i in range(0, len(ch_ids), 400):
+            chunk = ch_ids[i:i + 400]
+            ph = ",".join("?" for _ in chunk)
+            cursor.execute(f"SELECT COUNT(*) FROM videos WHERE channel_id IN ({ph})", tuple(chunk))
+            total_videos += cursor.fetchone()[0]
+            cursor.execute(f"SELECT COUNT(*) FROM videos WHERE channel_id IN ({ph}) AND download_path IS NOT NULL AND download_path != ''", tuple(chunk))
+            downloaded_videos += cursor.fetchone()[0]
+            cursor.execute(f"SELECT COUNT(*) FROM videos WHERE channel_id IN ({ph}) AND rendered_path IS NOT NULL AND rendered_path != ''", tuple(chunk))
+            rendered_videos += cursor.fetchone()[0]
 
-    # Thống kê upload tasks của các profile GPM trong chiến dịch này
+    # Thống kê upload tasks của các profile GPM trong chiến dịch này (an toàn cho hàng ngàn profile)
     queued_tasks = 0
     completed_tasks = 0
     failed_tasks = 0
     if gpm_ids:
-        g_placeholders = ",".join("?" for _ in gpm_ids)
-        cursor.execute(f"SELECT COUNT(*) FROM upload_tasks WHERE gpm_profile_id IN ({g_placeholders}) AND status = 'queued'", tuple(gpm_ids))
-        queued_tasks = cursor.fetchone()[0]
-        cursor.execute(f"SELECT COUNT(*) FROM upload_tasks WHERE gpm_profile_id IN ({g_placeholders}) AND status = 'completed'", tuple(gpm_ids))
-        completed_tasks = cursor.fetchone()[0]
-        cursor.execute(f"SELECT COUNT(*) FROM upload_tasks WHERE gpm_profile_id IN ({g_placeholders}) AND status = 'failed'", tuple(gpm_ids))
-        failed_tasks = cursor.fetchone()[0]
+        for i in range(0, len(gpm_ids), 400):
+            chunk = gpm_ids[i:i + 400]
+            g_ph = ",".join("?" for _ in chunk)
+            cursor.execute(f"SELECT COUNT(*) FROM upload_tasks WHERE gpm_profile_id IN ({g_ph}) AND status = 'queued'", tuple(chunk))
+            queued_tasks += cursor.fetchone()[0]
+            cursor.execute(f"SELECT COUNT(*) FROM upload_tasks WHERE gpm_profile_id IN ({g_ph}) AND status = 'completed'", tuple(chunk))
+            completed_tasks += cursor.fetchone()[0]
+            cursor.execute(f"SELECT COUNT(*) FROM upload_tasks WHERE gpm_profile_id IN ({g_ph}) AND status = 'failed'", tuple(chunk))
+            failed_tasks += cursor.fetchone()[0]
 
     # Chi tiết danh sách video & tài khoản TikTok nhận bài của chiến dịch này
     campaign_videos = []
     if ch_ids:
-        placeholders = ",".join("?" for _ in ch_ids)
+        sample_ch_ids = ch_ids[:400]
+        placeholders = ",".join("?" for _ in sample_ch_ids)
         cursor.execute(f'''
             SELECT v.id, v.title, v.duration, v.status, v.download_path, v.rendered_path, v.created_at,
                    v.channel_id, COALESCE(c.display_name, c.title, v.channel_id) as channel_name,
@@ -1208,7 +1579,7 @@ def get_campaign_logs(campaign_id: int):
             LEFT JOIN gpm_profiles gp ON ut.gpm_profile_id = gp.id
             WHERE v.channel_id IN ({placeholders})
             ORDER BY v.id DESC LIMIT 50
-        ''', tuple(ch_ids))
+        ''', tuple(sample_ch_ids))
         campaign_videos = [dict(r) for r in cursor.fetchall()]
 
     # Nếu campaign_logs chưa có nhiều, bổ sung logs từ system_logs có liên quan
@@ -1355,12 +1726,21 @@ def delete_campaign(campaign_id: int):
 @app.post("/api/video/download")
 def download_video(req: DownloadVideoRequest, bg_tasks: BackgroundTasks):
     clean_url = (req.url or "").strip()
+    if not clean_url:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập link video YouTube!")
     if not is_safe_external_url(clean_url):
         raise HTTPException(
             status_code=400,
             detail="URL không hợp lệ hoặc bị từ chối vì lý do bảo mật (chỉ chấp nhận http/https công khai)"
         )
-    result = yt_downloader.download_video(clean_url)
+    target_dir = req.target_dir
+    if not target_dir:
+        from backend.config import DOWNLOADS_DIR
+        direct_dir = DOWNLOADS_DIR / "Direct Links"
+        direct_dir.mkdir(parents=True, exist_ok=True)
+        target_dir = str(direct_dir)
+
+    result = yt_downloader.download_video(clean_url, target_dir=target_dir, is_studio=req.is_studio)
     if not result:
         raise HTTPException(status_code=400, detail="Không thể tải video từ URL này")
     return {"status": "success", "video": result}
@@ -1430,10 +1810,10 @@ def sync_local_videos_with_db():
         if r["yt_video_id"]:
             known_vid_ids.add(r["yt_video_id"])
 
-    # Quét DOWNLOADS_DIR
+    # Quét DOWNLOADS_DIR (hỗ trợ thư mục con theo kênh và studio)
     if DOWNLOADS_DIR.exists():
         for ext in ["*.mp4", "*.mkv", "*.webm", "*.mov"]:
-            for f in DOWNLOADS_DIR.glob(ext):
+            for f in DOWNLOADS_DIR.rglob(ext):
                 abs_f = os.path.abspath(str(f))
                 if abs_f in known_paths:
                     continue
@@ -1467,10 +1847,10 @@ def sync_local_videos_with_db():
                 known_paths.add(abs_f)
                 known_vid_ids.add(v_id)
 
-    # Quét RENDERED_DIR và data/test_renders
+    # Quét RENDERED_DIR và data/test_renders (hỗ trợ thư mục con theo kênh)
     for d in [RENDERED_DIR, Path("data/test_renders")]:
         if d.exists():
-            for f in d.glob("*.mp4"):
+            for f in d.rglob("*.mp4"):
                 abs_f = os.path.abspath(str(f))
                 fname = f.name
                 vid_m = re.search(r'([a-zA-Z0-9_-]{11})', fname)
@@ -1499,7 +1879,7 @@ def list_videos(sync: bool = True):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT v.*, COALESCE(c.display_name, c.title, 'Dán trực tiếp') as channel_name, c.render_dir as ch_render_dir
+        SELECT v.*, COALESCE(NULLIF(c.display_name, ''), NULLIF(c.title, ''), 'Dán trực tiếp') as channel_name, c.render_dir as ch_render_dir
         FROM videos v
         LEFT JOIN channels c ON v.channel_id = c.channel_id
         ORDER BY v.id DESC
@@ -1527,7 +1907,7 @@ def list_videos(sync: bool = True):
         found_files = set()
         for d in dirs_to_check:
             if vid_id and os.path.exists(d):
-                for p in Path(d).glob(f"*{vid_id}*.mp4"):
+                for p in Path(d).rglob(f"*{vid_id}*.mp4"):
                     if str(p) not in found_files:
                         found_files.add(str(p))
                         part_m = re.search(r'Part(\d+)', p.name, re.IGNORECASE)
@@ -1592,7 +1972,7 @@ def stream_video(video_id: int, type: str = "auto", part: int = 1):
             dirs_to_check.append(RENDERED_DIR)
 
         for d in dirs_to_check:
-            for p in d.glob(f"*{vid_id}*Part{part}*.mp4"):
+            for p in d.rglob(f"*{vid_id}*Part{part}*.mp4"):
                 file_path = str(p)
                 break
             if file_path:
@@ -1607,8 +1987,333 @@ def stream_video(video_id: int, type: str = "auto", part: int = 1):
 
     return FileResponse(file_path, media_type="video/mp4")
 
+class UpdateVideoRequest(BaseModel):
+    title: Optional[str] = None
+
+@app.put("/api/video/{video_id}")
+def update_video(video_id: str, req: UpdateVideoRequest):
+    """Cập nhật thông tin video (tiêu đề)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM videos WHERE id = ? OR yt_video_id = ?", (video_id, video_id))
+    v = cursor.fetchone()
+    if not v:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi video")
+    
+    updates = []
+    params = []
+    if req.title is not None and req.title.strip():
+        updates.append("title = ?")
+        params.append(req.title.strip())
+
+    if updates:
+        params.append(v["id"])
+        cursor.execute(f"UPDATE videos SET {', '.join(updates)} WHERE id = ?", tuple(params))
+        conn.commit()
+    conn.close()
+    return {"status": "success", "message": "Đã cập nhật thông tin video thành công"}
+
+@app.delete("/api/video/{video_id}")
+def delete_video(video_id: str):
+    """Xóa video khỏi hệ thống, dọn dẹp toàn bộ file tải về và render trên ổ đĩa"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM videos WHERE id = ? OR yt_video_id = ?", (video_id, video_id))
+    v = cursor.fetchone()
+    if not v:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi video")
+
+    v = dict(v)
+    v_db_id = v["id"]
+    yt_vid_id = v.get("yt_video_id") or ""
+    v_title = v.get("title") or f"#{v_db_id}"
+
+    # 1. Xóa file gốc (download_path)
+    if v.get("download_path") and os.path.exists(v["download_path"]):
+        try:
+            os.remove(v["download_path"])
+        except Exception as e:
+            logger.warning(f"Lỗi xóa file gốc download_path: {e}")
+
+    # 2. Xóa file render chính (rendered_path)
+    if v.get("rendered_path") and os.path.exists(v["rendered_path"]):
+        try:
+            os.remove(v["rendered_path"])
+        except Exception as e:
+            logger.warning(f"Lỗi xóa file rendered_path: {e}")
+
+    # 3. Quét và dọn sạch các file clip Part đã render liên quan
+    if yt_vid_id:
+        from backend.config import RENDERED_DIR, DOWNLOADS_DIR
+        for search_dir in [RENDERED_DIR, DOWNLOADS_DIR, Path("data/test_renders")]:
+            if search_dir.exists():
+                try:
+                    for part_f in search_dir.rglob(f"*{yt_vid_id}*"):
+                        if part_f.is_file():
+                            try:
+                                part_f.unlink()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+    # 4. Xóa các lịch đăng bài trong upload_tasks
+    cursor.execute("DELETE FROM upload_tasks WHERE video_id = ?", (v_db_id,))
+    # 5. Xóa bản ghi trong bảng videos
+    cursor.execute("DELETE FROM videos WHERE id = ?", (v_db_id,))
+    conn.commit()
+    conn.close()
+
+    log_event("INFO", f"Đã xóa video #{v_db_id} '{v_title}' và dọn dẹp toàn bộ file đĩa liên quan.")
+    return {"status": "success", "message": f"Đã xóa vĩnh viễn video '{v_title}' thành công"}
+
+# ==========================================
+# --- Audio Studio (Kho Âm Thanh & BGM) ---
+# ==========================================
+
+@app.get("/api/audio/categories")
+def get_audio_categories():
+    """Lấy danh sách các thư mục chủ đề nhạc nền kèm thống kê"""
+    categories = audio_manager.get_categories()
+    return {"status": "success", "categories": categories}
+
+@app.post("/api/audio/categories/create")
+def create_audio_category(req: CreateCategoryRequest):
+    """Tạo thư mục chủ đề nhạc mới"""
+    cat_name = (req.name or "").strip()
+    if not cat_name:
+        raise HTTPException(status_code=400, detail="Tên thư mục không được để trống!")
+    if not is_valid_folder_name(cat_name):
+        raise HTTPException(status_code=400, detail="Tên thư mục không hợp lệ hoặc chứa ký tự đặc biệt!")
+    try:
+        cat = audio_manager.create_category(cat_name, req.display_name)
+        log_event("INFO", f"Đã tạo thư mục nhạc nền mới: {cat['name']}")
+        return {"status": "success", "category": cat}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/audio/categories/rename")
+def rename_audio_category(req: RenameCategoryRequest):
+    """Đổi tên thư mục chủ đề nhạc"""
+    if not req.old_id or not req.old_id.strip():
+        raise HTTPException(status_code=400, detail="Mã thư mục cũ không được để trống!")
+    new_name = (req.new_name or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Tên thư mục mới không được để trống!")
+    if not is_valid_folder_name(new_name):
+        raise HTTPException(status_code=400, detail="Tên thư mục mới không hợp lệ hoặc chứa ký tự đặc biệt!")
+    try:
+        cat = audio_manager.rename_category(req.old_id, new_name, req.display_name)
+        log_event("INFO", f"Đã đổi tên thư mục nhạc nền: {req.old_id} -> {cat['name']}")
+        return {"status": "success", "category": cat}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/audio/categories/{category_id}")
+def delete_audio_category(category_id: str):
+    """Xóa thư mục chủ đề nhạc nền"""
+    try:
+        ok = audio_manager.delete_category(category_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Không tìm thấy thư mục để xóa")
+        log_event("INFO", f"Đã xóa thư mục nhạc nền: {category_id}")
+        return {"status": "success", "category_id": category_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/audio/settings")
+def get_audio_settings():
+    """Lấy cài đặt cấu hình Thư viện Audio"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings WHERE key LIKE 'audio_%'")
+    s = dict(cursor.fetchall())
+    conn.close()
+    return {
+        "status": "success",
+        "music_dir": s.get("audio_music_dir", str(audio_manager.music_dir)),
+        "max_size_mb": int(s.get("audio_max_size_mb", 50)),
+        "default_bitrate": s.get("audio_default_bitrate", "192k"),
+        "max_search_results": int(s.get("audio_max_search_results", 50)),
+        "normalize_audio": s.get("audio_normalize_audio", "1") == "1"
+    }
+
+@app.post("/api/audio/settings")
+def save_audio_settings(req: AudioSettingsRequest):
+    """Lưu cài đặt cấu hình Thư viện Audio"""
+    if req.max_size_mb is not None and (req.max_size_mb < 1 or req.max_size_mb > 500):
+        raise HTTPException(status_code=400, detail="Kích thước tối đa file nhạc phải từ 1 đến 500 MB!")
+    if req.max_search_results is not None and (req.max_search_results < 1 or req.max_search_results > 100):
+        raise HTTPException(status_code=400, detail="Số bài hát tìm kiếm tối đa phải từ 1 đến 100 bài!")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    if req.music_dir:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('audio_music_dir', ?)", (req.music_dir.strip(),))
+        p = Path(req.music_dir.strip())
+        p.mkdir(parents=True, exist_ok=True)
+        audio_manager.music_dir = p
+    if req.max_size_mb is not None:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('audio_max_size_mb', ?)", (str(req.max_size_mb),))
+    if req.default_bitrate:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('audio_default_bitrate', ?)", (req.default_bitrate,))
+    if req.max_search_results is not None:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('audio_max_search_results', ?)", (str(req.max_search_results),))
+    if req.normalize_audio is not None:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('audio_normalize_audio', ?)", ("1" if req.normalize_audio else "0",))
+    conn.commit()
+    conn.close()
+    log_event("INFO", "Đã cập nhật cài đặt Thư viện Audio")
+    return {"status": "success", "message": "Đã lưu cài đặt Audio thành công!"}
+
+@app.get("/api/audio/tracks")
+def get_audio_tracks(category: str = "general"):
+    """Lấy danh sách các bài hát trong thư mục chủ đề"""
+    tracks = audio_manager.get_tracks_in_category(category)
+    return {"status": "success", "category": category, "count": len(tracks), "tracks": tracks}
+
+@app.post("/api/audio/search-youtube")
+def search_youtube_audio_tracks(req: SearchAudioRequest):
+    """Tìm kiếm nhạc YouTube No-Copyright theo từ khóa với giới hạn 20, 50, 100, 200 bài"""
+    kw = (req.keyword or "").strip()
+    if not kw:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập từ khóa tìm kiếm nhạc YouTube!")
+    if req.max_results is not None and (req.max_results < 1 or req.max_results > 100):
+        raise HTTPException(status_code=400, detail="Số lượng kết quả tìm kiếm phải từ 1 đến 100!")
+    tracks = audio_manager.search_youtube_audio(kw, req.max_results)
+    return {
+        "status": "success",
+        "keyword": kw,
+        "max_results": req.max_results,
+        "count": len(tracks),
+        "tracks": tracks
+    }
+
+@app.get("/api/audio/yt-stream-url")
+def get_youtube_stream_url(url: str):
+    """Lấy direct streaming audio URL hoặc metadata preview cho video YouTube"""
+    if not url:
+        raise HTTPException(status_code=400, detail="Thiếu tham số url")
+
+    vid_match = re.search(r'(?:v=|\/|be\/)([a-zA-Z0-9_-]{11})', url)
+    video_id = vid_match.group(1) if vid_match else url.strip()
+
+    data = audio_manager.get_youtube_stream_url(url)
+    if not data:
+        return {
+            "status": "fallback",
+            "video_id": video_id,
+            "embed_url": f"https://www.youtube-nocookie.com/embed/{video_id}?autoplay=1",
+            "stream_url": None
+        }
+
+    return {
+        "status": "success",
+        "video_id": data.get("id") or video_id,
+        "title": data.get("title"),
+        "duration": data.get("duration"),
+        "stream_url": data.get("stream_url"),
+        "embed_url": f"https://www.youtube-nocookie.com/embed/{data.get('id') or video_id}?autoplay=1"
+    }
+
+@app.post("/api/audio/download-yt")
+def download_youtube_audio_track(req: DownloadYtAudioRequest):
+    """Tải bài hát từ YouTube No-Copyright vào thư mục chủ đề"""
+    clean_url = (req.url or "").strip()
+    if not clean_url:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập link hoặc Video ID YouTube!")
+    if not is_safe_external_url(clean_url) and not re.match(r"^[a-zA-Z0-9_-]{11}$", clean_url):
+        raise HTTPException(status_code=400, detail="URL hoặc Video ID không hợp lệ!")
+    try:
+        res = audio_manager.download_youtube_track(clean_url, req.category)
+        log_event("INFO", f"Đã tải bài hát từ YouTube: {res.get('title')} -> [{req.category}]")
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/audio/upload")
+async def upload_audio_files(
+    category: str = Form("general"),
+    files: List[UploadFile] = File(...)
+):
+    """Upload một hoặc nhiều file nhạc từ máy tính vào thư mục chủ đề"""
+    safe_cat = os.path.basename(category) or "general"
+    target_dir = MUSIC_DIR / safe_cat
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_files = []
+    errors = []
+
+    for file in files:
+        original_name = file.filename or "track.mp3"
+        ext = os.path.splitext(original_name)[1].lower()
+        if ext not in ALLOWED_AUDIO_EXTENSIONS:
+            errors.append(f"{original_name}: Định dạng '{ext}' không được hỗ trợ")
+            continue
+
+        safe_name = sanitize_audio_filename(original_name)
+        target_path = target_dir / safe_name
+
+        try:
+            contents = await file.read()
+            with open(target_path, "wb") as f_out:
+                f_out.write(contents)
+            saved_files.append(safe_name)
+        except Exception as e:
+            errors.append(f"{original_name}: Lỗi khi lưu file ({str(e)})")
+
+    log_event("INFO", f"Đã upload {len(saved_files)} bài hát vào thư mục âm thanh '{safe_cat}'")
+    return {
+        "status": "success" if saved_files else "error",
+        "category": safe_cat,
+        "uploaded_count": len(saved_files),
+        "files": saved_files,
+        "errors": errors
+    }
+
+@app.get("/api/audio/stream/{category}/{filename}")
+def stream_audio_file(category: str, filename: str):
+    """Stream file audio để nghe thử trực tiếp trên trình duyệt"""
+    safe_cat = os.path.basename(category)
+    safe_file = os.path.basename(filename)
+    file_path = MUSIC_DIR / safe_cat / safe_file
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File âm thanh không tồn tại")
+
+    ext = file_path.suffix.lower()
+    media_types = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac"
+    }
+    media_type = media_types.get(ext, "audio/mpeg")
+    return FileResponse(str(file_path), media_type=media_type)
+
+@app.delete("/api/audio/tracks")
+def delete_audio_track(req: DeleteAudioRequest):
+    """Xóa file nhạc khỏi thư mục"""
+    ok = audio_manager.delete_track(req.category, req.filename)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Không tìm thấy file nhạc để xóa")
+    return {"status": "success", "message": f"Đã xóa bài hát '{req.filename}'"}
+
 @app.post("/api/video/render")
 def render_video_ai(req: RenderVideoRequest):
+    if not req.video_id or not req.video_id.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng chọn video hợp lệ để render!")
+    if req.duration is not None and (req.duration < 10 or req.duration > 3600):
+        raise HTTPException(status_code=400, detail="Thời lượng render phải từ 10 đến 3600 giây!")
+    if req.clips_count is not None and (req.clips_count < 1 or req.clips_count > 20):
+        raise HTTPException(status_code=400, detail="Số clip cắt phải từ 1 đến 20!")
+    if req.bgm_volume is not None and (req.bgm_volume < 0.0 or req.bgm_volume > 1.0):
+        raise HTTPException(status_code=400, detail="Âm lượng nhạc nền BGM phải từ 0.0 đến 1.0!")
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -1624,6 +2329,39 @@ def render_video_ai(req: RenderVideoRequest):
         raise HTTPException(status_code=404, detail="Không tìm thấy file video gốc đã tải")
 
     ch_name = row["display_name"] or row["ch_title"] or ""
+
+    # Nếu yêu cầu cắt nhiều clip từ video gốc (clips_count > 1)
+    if req.clips_count and req.clips_count > 1:
+        parts = ai_video_engine.auto_slice_and_render_parts(
+            input_file=row["download_path"],
+            video_id=req.video_id,
+            total_duration=int(row["duration"] or 120),
+            part_duration=req.duration,
+            channel_name=ch_name,
+            video_title=row["title"],
+            output_dir=row["ch_render_dir"] or None,
+            max_clips=req.clips_count,
+            add_part_label=req.add_part_label if req.add_part_label is not None else True,
+            enable_subtitles=req.enable_subtitles,
+            flip_horizontal=req.flip_horizontal,
+            speed_factor=req.speed_factor,
+            subtitle_style=req.subtitle_style,
+            subtitle_position=req.subtitle_position,
+            bgm_folder=req.bgm_folder,
+            bgm_volume=req.bgm_volume
+        )
+        if not parts:
+            raise HTTPException(status_code=500, detail="Lỗi khi render các part video AI")
+
+        copy_data = ai_video_engine.generate_ai_hook_and_copy(row["title"])
+        return {
+            "status": "success",
+            "rendered_file": parts[0],
+            "rendered_files": parts,
+            "parts_count": len(parts),
+            "ai_copy": copy_data
+        }
+
     rendered = ai_video_engine.process_transformative_video(
         input_file=row["download_path"],
         video_id=req.video_id,
@@ -1634,7 +2372,12 @@ def render_video_ai(req: RenderVideoRequest):
         channel_name=ch_name,
         video_title=row["title"],
         output_dir=row["ch_render_dir"] or None,
-        enable_subtitles=req.enable_subtitles
+        enable_subtitles=req.enable_subtitles,
+        add_part_label=req.add_part_label if req.add_part_label is not None else True,
+        subtitle_style=req.subtitle_style,
+        subtitle_position=req.subtitle_position,
+        bgm_folder=req.bgm_folder,
+        bgm_volume=req.bgm_volume
     )
 
     if not rendered:
@@ -1645,6 +2388,8 @@ def render_video_ai(req: RenderVideoRequest):
     return {
         "status": "success",
         "rendered_file": rendered,
+        "rendered_files": [rendered],
+        "parts_count": 1,
         "ai_copy": copy_data
     }
 
@@ -1657,6 +2402,15 @@ def render_smart_ai_video(req: SmartRenderVideoRequest):
     3. Tự động tạo phụ đề động Karaoke dạng .ass
     4. Render lách bản quyền với bộ lọc Anti-Detection chuyên nghiệp
     """
+    if not req.video_id or not req.video_id.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng chọn video hợp lệ để render!")
+    if req.target_duration is not None and (req.target_duration < 10 or req.target_duration > 3600):
+        raise HTTPException(status_code=400, detail="Thời lượng render phải từ 10 đến 3600 giây!")
+    if req.clips_count is not None and (req.clips_count < 1 or req.clips_count > 20):
+        raise HTTPException(status_code=400, detail="Số clip cắt phải từ 1 đến 20!")
+    if req.bgm_volume is not None and (req.bgm_volume < 0.0 or req.bgm_volume > 1.0):
+        raise HTTPException(status_code=400, detail="Âm lượng nhạc nền BGM phải từ 0.0 đến 1.0!")
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -1685,7 +2439,12 @@ def render_smart_ai_video(req: SmartRenderVideoRequest):
         flip_horizontal=req.flip_horizontal,
         speed_factor=req.speed_factor,
         add_part_label=req.add_part_label,
-        generate_hook=req.generate_hook
+        generate_hook=req.generate_hook,
+        clips_count=req.clips_count or 1,
+        subtitle_style=req.subtitle_style,
+        subtitle_position=req.subtitle_position,
+        bgm_folder=req.bgm_folder,
+        bgm_volume=req.bgm_volume
     )
 
     if result.get("status") != "success":
@@ -1697,6 +2456,15 @@ def render_smart_ai_video(req: SmartRenderVideoRequest):
 # --- TikTok Upload API ---
 @app.post("/api/tiktok/upload")
 def upload_tiktok(req: UploadVideoRequest):
+    if not req.gpm_profile_id or not req.gpm_profile_id.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng chọn Profile GPMLogin để upload!")
+    if not req.video_path or not req.video_path.strip():
+        raise HTTPException(status_code=400, detail="Đường dẫn file video không được để trống!")
+    if not os.path.exists(req.video_path):
+        raise HTTPException(status_code=400, detail=f"Không tìm thấy file video tại: {req.video_path}")
+    if not req.title or not req.title.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng nhập tiêu đề cho video TikTok!")
+
     result = tiktok_uploader.upload_via_gpm(
         gpm_profile_id=req.gpm_profile_id,
         video_path=req.video_path,
@@ -1709,6 +2477,13 @@ def upload_tiktok(req: UploadVideoRequest):
 # --- Profile Stats & 10k Alert API ---
 @app.post("/api/profiles/stats")
 def update_profile_stats(req: UpdateProfileStatsRequest):
+    if not req.gpm_id or not req.gpm_id.strip():
+        raise HTTPException(status_code=400, detail="Mã profile GPM không được để trống!")
+    if req.followers is not None and req.followers < 0:
+        raise HTTPException(status_code=400, detail="Số lượng Follower không được là số âm!")
+    if req.views is not None and req.views < 0:
+        raise HTTPException(status_code=400, detail="Số lượt xem không được là số âm!")
+
     result = metrics_tracker.update_profile_stats(
         gpm_id=req.gpm_id,
         followers=req.followers,
@@ -1768,6 +2543,8 @@ def get_profiles_session_status():
 
 @app.put("/api/profiles/{gpm_id}/username")
 def update_profile_username(gpm_id: str, req: UpdateProfileUsernameRequest):
+    if not req.username or not req.username.strip():
+        raise HTTPException(status_code=400, detail="Username TikTok không được để trống!")
     cleaned_u = req.username.strip().replace("@", "")
     conn = get_connection()
     cursor = conn.cursor()
@@ -1776,6 +2553,36 @@ def update_profile_username(gpm_id: str, req: UpdateProfileUsernameRequest):
     conn.close()
     log_event("INFO", f"Đã gán TikTok username @{cleaned_u} cho GPM profile {gpm_id}")
     return {"status": "success", "gpm_id": gpm_id, "username": cleaned_u}
+
+@app.put("/api/profiles/{gpm_id}/notify-status")
+@app.post("/api/profiles/{gpm_id}/notify-status")
+def update_profile_notify_status(gpm_id: str, req: UpdateProfileNotifyStatusRequest):
+    valid_statuses = {"tracking", "sent", "muted"}
+    status = (req.status or "").strip().lower()
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Trạng thái không hợp lệ (phải là tracking, sent, hoặc muted)")
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM gpm_profiles WHERE gpm_id = ?", (gpm_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy profile GPMLogin")
+    
+    profile_name = row["name"]
+    cursor.execute("UPDATE gpm_profiles SET notify_status = ? WHERE gpm_id = ?", (status, gpm_id))
+    conn.commit()
+    conn.close()
+
+    status_labels = {
+        "tracking": "Đang theo dõi",
+        "sent": "Đã gửi thông báo",
+        "muted": "Bỏ theo dõi"
+    }
+    label = status_labels.get(status, status)
+    log_event("INFO", f"Đã cập nhật trạng thái theo dõi 10K cho profile '{profile_name}' thành: {label}")
+    return {"status": "success", "gpm_id": gpm_id, "notify_status": status, "label": label}
 
 @app.get("/api/settings/follower-scheduler")
 def get_follower_scheduler_settings():
@@ -1790,6 +2597,14 @@ def get_follower_scheduler_settings():
 
 @app.post("/api/settings/follower-scheduler")
 def save_follower_scheduler_settings(req: FollowerSchedulerRequest):
+    if req.interval_hours is not None and (req.interval_hours < 1 or req.interval_hours > 48):
+        raise HTTPException(status_code=400, detail="Khoảng cách giữa các lần quét phải từ 1 đến 48 giờ!")
+    if req.mode == "times" and req.times:
+        for t in req.times.split(","):
+            t = t.strip()
+            if t and not is_valid_hhmm(t):
+                raise HTTPException(status_code=400, detail=f"Khung giờ '{t}' không đúng định dạng HH:MM (00:00 - 23:59)!")
+
     scheduler.update_follower_config(
         enabled=req.enabled,
         mode=req.mode,
@@ -1845,7 +2660,10 @@ def save_system_tray_settings(req: SystemTraySettingsRequest):
 def get_telegram_channels():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, chat_id, is_active, created_at FROM telegram_channels ORDER BY id ASC")
+    cursor.execute(
+        "SELECT id, name, chat_id, is_active, notify_10k, notify_issues, notify_daily_report, daily_report_time, last_daily_report, created_at "
+        "FROM telegram_channels ORDER BY id ASC"
+    )
     rows = cursor.fetchall()
     conn.close()
     channels = [dict(r) for r in rows]
@@ -1868,10 +2686,18 @@ def create_telegram_channel(req: TelegramChannelCreateRequest):
     conn = get_connection()
     cursor = conn.cursor()
     is_active_int = 1 if req.is_active else 0
+    notify_10k_int = 1 if req.notify_10k else 0
+    notify_issues_int = 1 if req.notify_issues else 0
+    notify_daily_int = 1 if req.notify_daily_report else 0
+    daily_time = (req.daily_report_time or "21:00").strip()
+    if daily_time and not is_valid_hhmm(daily_time):
+        raise HTTPException(status_code=400, detail="Khung giờ báo cáo phải có định dạng HH:MM (00:00 - 23:59)!")
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     cursor.execute(
-        "INSERT INTO telegram_channels (name, chat_id, is_active, created_at) VALUES (?, ?, ?, ?)",
-        (name, chat_id, is_active_int, now_str)
+        "INSERT INTO telegram_channels (name, chat_id, is_active, notify_10k, notify_issues, notify_daily_report, daily_report_time, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, chat_id, is_active_int, notify_10k_int, notify_issues_int, notify_daily_int, daily_time, now_str)
     )
     new_id = cursor.lastrowid
     conn.commit()
@@ -1886,6 +2712,10 @@ def create_telegram_channel(req: TelegramChannelCreateRequest):
             "name": name,
             "chat_id": chat_id,
             "is_active": is_active_int,
+            "notify_10k": notify_10k_int,
+            "notify_issues": notify_issues_int,
+            "notify_daily_report": notify_daily_int,
+            "daily_report_time": daily_time,
             "created_at": now_str
         }
     }
@@ -1899,6 +2729,10 @@ def update_telegram_channel(channel_id: int, req: TelegramChannelUpdateRequest):
     if not chat_id:
         raise HTTPException(status_code=400, detail="Chat ID không được để trống")
 
+    daily_time = (req.daily_report_time or "21:00").strip()
+    if daily_time and not is_valid_hhmm(daily_time):
+        raise HTTPException(status_code=400, detail="Khung giờ báo cáo phải có định dạng HH:MM (00:00 - 23:59)!")
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM telegram_channels WHERE id = ?", (channel_id,))
@@ -1907,9 +2741,13 @@ def update_telegram_channel(channel_id: int, req: TelegramChannelUpdateRequest):
         raise HTTPException(status_code=404, detail="Không tìm thấy kênh Telegram")
 
     is_active_int = 1 if req.is_active else 0
+    notify_10k_int = 1 if req.notify_10k else 0
+    notify_issues_int = 1 if req.notify_issues else 0
+    notify_daily_int = 1 if req.notify_daily_report else 0
+
     cursor.execute(
-        "UPDATE telegram_channels SET name = ?, chat_id = ?, is_active = ? WHERE id = ?",
-        (name, chat_id, is_active_int, channel_id)
+        "UPDATE telegram_channels SET name = ?, chat_id = ?, is_active = ?, notify_10k = ?, notify_issues = ?, notify_daily_report = ?, daily_report_time = ? WHERE id = ?",
+        (name, chat_id, is_active_int, notify_10k_int, notify_issues_int, notify_daily_int, daily_time, channel_id)
     )
     conn.commit()
     conn.close()
@@ -1922,7 +2760,11 @@ def update_telegram_channel(channel_id: int, req: TelegramChannelUpdateRequest):
             "id": channel_id,
             "name": name,
             "chat_id": chat_id,
-            "is_active": is_active_int
+            "is_active": is_active_int,
+            "notify_10k": notify_10k_int,
+            "notify_issues": notify_issues_int,
+            "notify_daily_report": notify_daily_int,
+            "daily_report_time": daily_time
         }
     }
 
@@ -1972,10 +2814,10 @@ def delete_telegram_channel(channel_id: int):
     }
 
 @app.post("/api/telegram/channels/{channel_id}/test")
-def test_specific_telegram_channel(channel_id: int):
+def test_specific_telegram_channel(channel_id: int, mode: Optional[str] = "connection"):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, chat_id FROM telegram_channels WHERE id = ?", (channel_id,))
+    cursor.execute("SELECT id, name, chat_id, notify_10k, notify_issues, notify_daily_report, daily_report_time FROM telegram_channels WHERE id = ?", (channel_id,))
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -1986,14 +2828,62 @@ def test_specific_telegram_channel(channel_id: int):
         return {"status": "failed", "message": "Chưa cấu hình Telegram Bot Token"}
 
     now_str = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
+    
+    # 1. Test 10k Alert
+    if mode == "10k":
+        result = notifier.send_10k_alert_detailed(
+            profile_name="Profile Demo #01",
+            username="tiktok_creator_us",
+            followers=10520,
+            views=120000,
+            target_chat_id=row["chat_id"]
+        )
+        return {
+            "status": "success" if result.get("success") else "failed",
+            "message": result.get("message")
+        }
+    
+    # 2. Test Issue Alert
+    elif mode == "issue":
+        result = notifier.send_issue_alert_detailed(
+            title="Lỗi Kết Nối GPMLogin & Proxy (Demo)",
+            message="Không thể mở profile GPM ID 'abcdef123': Proxy SOCKS5 timed out sau 15 giây.",
+            solution="1. Mở phần mềm GPMLogin trên máy.\n2. Kiểm tra proxy của profile (nhấn Check Proxy).\n3. Đổi proxy mới nếu proxy cũ đã hết hạn.",
+            severity="HIGH",
+            details="Profile: Profile Demo #01 | Proxy: 123.45.67.89:1080",
+            target_chat_id=row["chat_id"]
+        )
+        return {
+            "status": "success" if result.get("success") else "failed",
+            "message": result.get("message")
+        }
+    
+    # 3. Test Daily Report
+    elif mode == "daily_report":
+        result = notifier.send_daily_report(target_chat_id=row["chat_id"])
+        return {
+            "status": "success" if result.get("success") else "failed",
+            "message": result.get("message")
+        }
+
+    # 4. Mặc định: Test kết nối chung
+    types_active = []
+    if row["notify_10k"]: types_active.append("🌟 Cảnh báo 10K Follower")
+    if row["notify_issues"]: types_active.append("⚠️ Cảnh báo sự cố & cách khắc phục")
+    if row["notify_daily_report"]: types_active.append(f"📊 Báo cáo hàng ngày ({row['daily_report_time'] or '21:00'})")
+    types_str = "\n".join([f"• {t}" for t in types_active]) if types_active else "• (Chưa bật loại thông báo nào)"
+
     msg = (
         "🔔 *[TIKTOK FARM] KIỂM TRA KẾT NỐI KÊNH THÀNH CÔNG!*\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📢 *Kênh:* `{row['name']}`\n"
+        f"📢 *Tên Kênh:* `{row['name']}`\n"
         f"🆔 *Chat ID:* `{row['chat_id']}`\n"
         f"⏰ *Thời gian:* `{now_str}`\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "✅ Kênh này đã sẵn sàng nhận thông báo nick đạt 10.000 Follower!"
+        "📋 *Loại thông báo đang đăng ký nhận:*\n"
+        f"{types_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "✅ Kênh này đã sẵn sàng hoạt động cùng TikTok Farm Auto-Pilot!"
     )
     ok, err_msg = notifier.send_message_to_chat(bot_token, row["chat_id"], msg)
     if ok:
@@ -2014,6 +2904,94 @@ def test_telegram_alert():
     return {
         "status": "success" if result.get("success") else "failed",
         "message": result.get("message", "Đã gửi test alert Telegram"),
+        "sent_count": result.get("sent_count", 0),
+        "total_active": result.get("total_active", 0),
+        "channels": result.get("channels", [])
+    }
+
+@app.post("/api/telegram/test-issue-alert")
+def test_telegram_issue_alert():
+    """Gửi tin nhắn cảnh báo sự cố thử nghiệm kèm hướng dẫn khắc phục tới các kênh nhận notify_issues"""
+    result = notifier.send_issue_alert_detailed(
+        title="Lỗi Đăng Video TikTok (Thử Nghiệm)",
+        message="Không thể click nút 'Đăng' do phiên đăng nhập trên GPMLogin hết hạn hoặc cần Captcha.",
+        solution="1. Mở GPMLogin trên máy tính, vào Profile bị lỗi.\n2. Đăng nhập lại TikTok và lưu phiên.\n3. Nhấn 'Thử Lại' tác vụ trong tab Quản Lý Upload.",
+        severity="HIGH",
+        details="Tài khoản: @mmo_demo_us | Profile: US_Farm_01"
+    )
+    return {
+        "status": "success" if result.get("success") else "failed",
+        "message": result.get("message", "Đã gửi cảnh báo sự cố thử nghiệm"),
+        "sent_count": result.get("sent_count", 0),
+        "total_active": result.get("total_active", 0),
+        "channels": result.get("channels", [])
+    }
+
+@app.post("/api/telegram/send-issue-alert")
+def send_telegram_issue_alert(req: TelegramSendIssueRequest):
+    """Gửi cảnh báo sự cố cụ thể tới các kênh hoặc kênh chỉ định"""
+    target_chat = None
+    if req.channel_id:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT chat_id FROM telegram_channels WHERE id = ?", (req.channel_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            target_chat = row["chat_id"]
+
+    ok = notifier.send_issue_alert(
+        title=req.title,
+        message=req.message,
+        solution=req.solution or "",
+        severity=req.severity or "ERROR",
+        details=req.details or "",
+        target_chat_id=target_chat,
+        force=True
+    )
+    return {
+        "status": "success" if ok else "failed",
+        "message": "Đã gửi cảnh báo sự cố tới Telegram" if ok else "Gửi cảnh báo sự cố thất bại"
+    }
+
+@app.get("/api/telegram/daily-report-preview")
+def preview_daily_report(date: Optional[str] = None):
+    """Xem trước nội dung báo cáo hoạt động hàng ngày"""
+    data = notifier.build_daily_report_data(report_date=date)
+    text = notifier.format_daily_report_message(data)
+    return {
+        "status": "success",
+        "report_date": data.get("report_date"),
+        "preview_text": text,
+        "summary": {
+            "total_uploads": data.get("total_uploads"),
+            "success_uploads": data.get("success_uploads"),
+            "failed_uploads": data.get("failed_uploads"),
+            "total_ai_cost_usd": data.get("total_ai_cost_usd"),
+            "total_ai_cost_vnd": data.get("total_ai_cost_vnd")
+        }
+    }
+
+@app.post("/api/telegram/send-daily-report")
+def send_daily_report_now(req: Optional[TelegramSendReportRequest] = None):
+    """Gửi ngay lập tức Báo cáo hoạt động ngày tới các kênh nhận notify_daily_report (hoặc kênh chỉ định)"""
+    target_chat = None
+    rep_date = None
+    if req:
+        rep_date = req.report_date
+        if req.channel_id:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT chat_id FROM telegram_channels WHERE id = ?", (req.channel_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                target_chat = row["chat_id"]
+
+    result = notifier.send_daily_report(report_date=rep_date, target_chat_id=target_chat)
+    return {
+        "status": "success" if result.get("success") else "failed",
+        "message": result.get("message", "Đã gửi báo cáo ngày"),
         "sent_count": result.get("sent_count", 0),
         "total_active": result.get("total_active", 0),
         "channels": result.get("channels", [])
@@ -2045,6 +3023,10 @@ def get_api_keys():
     tele_chat = os.getenv("TELEGRAM_CHAT_ID", db_settings.get("TELEGRAM_CHAT_ID", cfg.TELEGRAM_CHAT_ID))
     gpm_url = os.getenv("GPM_API_BASE_URL", db_settings.get("GPM_API_BASE_URL", cfg.GPM_API_BASE_URL))
 
+    sub_style = os.getenv("SUBTITLE_STYLE", db_settings.get("SUBTITLE_STYLE", getattr(cfg, 'SUBTITLE_STYLE', 'karaoke_yellow')))
+    sub_pos = os.getenv("SUBTITLE_POSITION", db_settings.get("SUBTITLE_POSITION", getattr(cfg, 'SUBTITLE_POSITION', 'center')))
+    sub_size = int(os.getenv("SUBTITLE_FONT_SIZE", db_settings.get("SUBTITLE_FONT_SIZE", getattr(cfg, 'SUBTITLE_FONT_SIZE', 54))))
+
     pool_status = yt_scanner.key_pool.get_keys_status()
     return {
         "youtube_api_keys": raw,
@@ -2059,6 +3041,9 @@ def get_api_keys():
         "whisper_model_size": whisper_size,
         "enable_dynamic_subtitles": enable_subs,
         "enable_anti_detect": enable_anti,
+        "subtitle_style": sub_style,
+        "subtitle_position": sub_pos,
+        "subtitle_font_size": sub_size,
         "telegram_bot_token": tele_token,
         "telegram_chat_id": tele_chat,
         "gpm_api_base_url": gpm_url,
@@ -2066,6 +3051,12 @@ def get_api_keys():
 
 @app.post("/api/settings/keys")
 def save_api_keys(req: SaveApiKeysRequest):
+    if req.subtitle_font_size is not None and (req.subtitle_font_size < 12 or req.subtitle_font_size > 120):
+        raise HTTPException(status_code=400, detail="Cỡ chữ phụ đề phải từ 12 đến 120 pt!")
+    if req.gpm_api_base_url is not None and req.gpm_api_base_url.strip():
+        if not req.gpm_api_base_url.strip().lower().startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="Địa chỉ GPM API Base URL phải bắt đầu bằng http:// hoặc https://!")
+
     updates = {}
     if req.youtube_api_keys is not None:
         keys = [k.strip() for k in req.youtube_api_keys.replace(";", ",").replace("\n", ",").split(",") if k.strip()]
@@ -2092,6 +3083,12 @@ def save_api_keys(req: SaveApiKeysRequest):
         updates["ENABLE_DYNAMIC_SUBTITLES"] = "true" if req.enable_dynamic_subtitles else "false"
     if req.enable_anti_detect is not None:
         updates["ENABLE_ANTI_DETECT"] = "true" if req.enable_anti_detect else "false"
+    if req.subtitle_style is not None:
+        updates["SUBTITLE_STYLE"] = req.subtitle_style.strip()
+    if req.subtitle_position is not None:
+        updates["SUBTITLE_POSITION"] = req.subtitle_position.strip()
+    if req.subtitle_font_size is not None:
+        updates["SUBTITLE_FONT_SIZE"] = str(req.subtitle_font_size)
     if req.telegram_bot_token is not None:
         updates["TELEGRAM_BOT_TOKEN"] = req.telegram_bot_token.strip()
     if req.telegram_chat_id is not None:
@@ -2101,7 +3098,6 @@ def save_api_keys(req: SaveApiKeysRequest):
 
     # 1. Save to .env file
     save_env_config(updates)
-
 
     # 2. Persist to SQLite settings table
     try:
@@ -2125,8 +3121,15 @@ class UpdateSchedulerSettingsRequest(BaseModel):
     upload_interval_seconds: int = 60
     auto_download: bool = True
     auto_render: bool = True
+    save_by_channel_folder: bool = False
     max_videos_per_scan: int = 5
     channel_delay_seconds: int = 2
+    auto_retry_enabled: bool = True
+    max_retries: int = 2
+    retry_delay_minutes: int = 15
+    watchdog_enabled: bool = True
+    stuck_timeout_minutes: int = 15
+    min_account_cooldown_minutes: Optional[int] = 60
 
 @app.get("/api/settings/defaults")
 def get_default_settings():
@@ -2144,6 +3147,7 @@ def get_default_settings():
         "upload_interval_seconds": int(settings_dict.get("upload_interval_seconds", getattr(scheduler, "upload_interval_seconds", 60))),
         "auto_download": settings_dict.get("auto_download", "1") == "1",
         "auto_render": settings_dict.get("auto_render", "1") == "1",
+        "save_by_channel_folder": settings_dict.get("save_by_channel_folder", "0") == "1",
         "max_videos_per_scan": int(settings_dict.get("max_videos_per_scan", getattr(scheduler, "max_videos_per_scan", 5))),
         "channel_delay_seconds": int(settings_dict.get("channel_delay_seconds", getattr(scheduler, "channel_delay_seconds", 2)))
     }
@@ -2162,21 +3166,52 @@ def get_scheduler_settings():
         "upload_interval_seconds": int(settings_dict.get("upload_interval_seconds", getattr(scheduler, "upload_interval_seconds", 60))),
         "auto_download": settings_dict.get("auto_download", "1") == "1",
         "auto_render": settings_dict.get("auto_render", "1") == "1",
+        "save_by_channel_folder": settings_dict.get("save_by_channel_folder", "0") == "1",
         "max_videos_per_scan": int(settings_dict.get("max_videos_per_scan", getattr(scheduler, "max_videos_per_scan", 5))),
         "channel_delay_seconds": int(settings_dict.get("channel_delay_seconds", getattr(scheduler, "channel_delay_seconds", 2))),
+        "auto_retry_enabled": settings_dict.get("upload_auto_retry", "1" if getattr(scheduler, "auto_retry_enabled", True) else "0") == "1",
+        "max_retries": int(settings_dict.get("upload_max_retries", getattr(scheduler, "max_retries", 2))),
+        "retry_delay_minutes": int(settings_dict.get("upload_retry_delay_minutes", getattr(scheduler, "retry_delay_minutes", 15))),
+        "watchdog_enabled": settings_dict.get("watchdog_enabled", "1" if getattr(scheduler, "watchdog_enabled", True) else "0") == "1",
+        "stuck_timeout_minutes": int(settings_dict.get("upload_stuck_timeout_minutes", getattr(scheduler, "stuck_timeout_minutes", 15))),
+        "min_account_cooldown_minutes": int(settings_dict.get("min_account_cooldown_minutes", getattr(scheduler, "min_account_cooldown_minutes", 60))),
         "scheduler_running": scheduler.is_running
     }
 
 @app.post("/api/settings/scheduler")
 def update_scheduler_settings(req: UpdateSchedulerSettingsRequest):
     """Save and apply advanced scheduler settings."""
+    if req.interval_minutes < 1 or req.interval_minutes > 1440:
+        raise HTTPException(status_code=400, detail="Chu kỳ quét RSS phải từ 1 đến 1440 phút!")
+    if req.upload_interval_seconds < 10 or req.upload_interval_seconds > 86400:
+        raise HTTPException(status_code=400, detail="Khoảng cách giữa các lần kiểm tra Upload phải từ 10 đến 86400 giây!")
+    if req.max_videos_per_scan < 1 or req.max_videos_per_scan > 50:
+        raise HTTPException(status_code=400, detail="Số video tối đa mỗi lần quét phải từ 1 đến 50!")
+    if req.channel_delay_seconds < 0 or req.channel_delay_seconds > 3600:
+        raise HTTPException(status_code=400, detail="Độ trễ giữa các kênh phải từ 0 đến 3600 giây!")
+    if req.max_retries < 1 or req.max_retries > 10:
+        raise HTTPException(status_code=400, detail="Số lần thử lại tối đa phải từ 1 đến 10!")
+    if req.retry_delay_minutes < 1 or req.retry_delay_minutes > 1440:
+        raise HTTPException(status_code=400, detail="Độ trễ giữa các lần thử lại phải từ 1 đến 1440 phút!")
+    if req.stuck_timeout_minutes < 5 or req.stuck_timeout_minutes > 180:
+        raise HTTPException(status_code=400, detail="Thời gian timeout chống treo phải từ 5 đến 180 phút!")
+    if req.min_account_cooldown_minutes is not None and (req.min_account_cooldown_minutes < 15 or req.min_account_cooldown_minutes > 1440):
+        raise HTTPException(status_code=400, detail="Giãn cách tối thiểu giữa 2 lần đăng bài trên cùng 1 tài khoản phải từ 15 đến 1440 phút!")
+
     scheduler.update_config(
         interval_minutes=req.interval_minutes,
         upload_interval_seconds=req.upload_interval_seconds,
         auto_download=req.auto_download,
         auto_render=req.auto_render,
+        save_by_channel_folder=req.save_by_channel_folder,
         max_videos_per_scan=req.max_videos_per_scan,
-        channel_delay_seconds=req.channel_delay_seconds
+        channel_delay_seconds=req.channel_delay_seconds,
+        auto_retry_enabled=req.auto_retry_enabled,
+        max_retries=req.max_retries,
+        retry_delay_minutes=req.retry_delay_minutes,
+        watchdog_enabled=req.watchdog_enabled,
+        stuck_timeout_minutes=req.stuck_timeout_minutes,
+        min_account_cooldown_minutes=req.min_account_cooldown_minutes
     )
     try:
         conn = get_connection()
@@ -2185,31 +3220,47 @@ def update_scheduler_settings(req: UpdateSchedulerSettingsRequest):
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('upload_interval_seconds', ?)", (str(req.upload_interval_seconds),))
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_download', ?)", ("1" if req.auto_download else "0",))
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_render', ?)", ("1" if req.auto_render else "0",))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('save_by_channel_folder', ?)", ("1" if req.save_by_channel_folder else "0",))
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('max_videos_per_scan', ?)", (str(req.max_videos_per_scan),))
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('channel_delay_seconds', ?)", (str(req.channel_delay_seconds),))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('upload_auto_retry', ?)", ("1" if req.auto_retry_enabled else "0",))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('upload_max_retries', ?)", (str(req.max_retries),))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('upload_retry_delay_minutes', ?)", (str(req.retry_delay_minutes),))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('watchdog_enabled', ?)", ("1" if req.watchdog_enabled else "0",))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('upload_stuck_timeout_minutes', ?)", (str(req.stuck_timeout_minutes),))
+        if req.min_account_cooldown_minutes is not None:
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('min_account_cooldown_minutes', ?)", (str(req.min_account_cooldown_minutes),))
         conn.commit()
         conn.close()
     except Exception as e:
         log_event("WARNING", f"Lỗi lưu cấu hình scheduler vào DB: {e}")
 
-    log_event("INFO", f"Đã cập nhật cấu hình tự động: Quét RSS {req.interval_minutes}p/lần, kiểm tra Upload {req.upload_interval_seconds}s, Max/kênh {req.max_videos_per_scan}.")
+    log_event("INFO", f"Đã cập nhật cấu hình tự động: Quét RSS {req.interval_minutes}p/lần, kiểm tra Upload {req.upload_interval_seconds}s, Giãn cách đăng nick {req.min_account_cooldown_minutes or 60}p, Auto-Retry: {'BẬT' if req.auto_retry_enabled else 'TẮT'} ({req.max_retries} lần, cách {req.retry_delay_minutes}p), Watchdog: {'BẬT' if req.watchdog_enabled else 'TẮT'} ({req.stuck_timeout_minutes}p).")
     return {
         "status": "success",
-        "message": f"Đã lưu cấu hình tự động quét ({req.interval_minutes} phút/lần) thành công!",
+        "message": f"Đã lưu cấu hình tự động quét ({req.interval_minutes} phút/lần) và Auto-Retry/Watchdog thành công!",
         "settings": {
             "interval_minutes": req.interval_minutes,
             "upload_interval_seconds": req.upload_interval_seconds,
             "auto_download": req.auto_download,
             "auto_render": req.auto_render,
+            "save_by_channel_folder": req.save_by_channel_folder,
             "max_videos_per_scan": req.max_videos_per_scan,
             "channel_delay_seconds": req.channel_delay_seconds,
+            "auto_retry_enabled": req.auto_retry_enabled,
+            "max_retries": req.max_retries,
+            "retry_delay_minutes": req.retry_delay_minutes,
+            "watchdog_enabled": req.watchdog_enabled,
+            "stuck_timeout_minutes": req.stuck_timeout_minutes,
             "scheduler_running": scheduler.is_running
         }
     }
 
 @app.post("/api/settings/test-key")
 def test_youtube_key(req: TestApiKeyRequest):
-    result = yt_scanner.test_key(req.key)
+    if not req.key or not req.key.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng nhập API Key cần kiểm tra!")
+    result = yt_scanner.test_key(req.key.strip())
     return result
 
 @app.post("/api/utils/browse-folder")
@@ -2341,6 +3392,9 @@ if RENDERED_DIR.exists():
 
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+
+if LOGO_DIR.exists():
+    app.mount("/logo", StaticFiles(directory=str(LOGO_DIR)), name="logo")
 
     @app.get("/")
     def serve_frontend():

@@ -14,14 +14,26 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Thư mục gốc dự án
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Thư mục gốc dự án (Tự động nhận diện khi đóng gói PyInstaller .exe hoặc chạy mã nguồn)
+if getattr(sys, "frozen", False):
+    # Khi chạy từ file exe đóng gói
+    BASE_DIR = Path(sys.executable).resolve().parent
+    BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    BUNDLE_DIR = BASE_DIR
 
-# Các thư mục lưu trữ dữ liệu
+# Thư mục frontend và logo
+FRONTEND_DIR = BUNDLE_DIR / "frontend" if (BUNDLE_DIR / "frontend").exists() else BASE_DIR / "frontend"
+LOGO_DIR = BUNDLE_DIR / "logo" if (BUNDLE_DIR / "logo").exists() else BASE_DIR / "logo"
+APP_ICON_PATH = LOGO_DIR / "app-logo.ico"
+
+# Các thư mục lưu trữ dữ liệu (luôn nằm ở BASE_DIR nơi người dùng cài đặt)
 DATA_DIR = BASE_DIR / "data"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 RENDERED_DIR = DATA_DIR / "rendered"
 LOGS_DIR = DATA_DIR / "logs"
+MUSIC_DIR = DATA_DIR / "music"
 LOG_FILE_PATH = LOGS_DIR / "app.log"
 DB_PATH = DATA_DIR / "tiktok_tool.db"
 
@@ -29,6 +41,18 @@ DB_PATH = DATA_DIR / "tiktok_tool.db"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 RENDERED_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+MUSIC_DIR.mkdir(parents=True, exist_ok=True)
+
+# Khởi tạo các thư mục chủ đề nhạc nền mặc định
+DEFAULT_BGM_THEMES = [
+    ("horror_mystery", "Chuyện Ma / Rùng Rợn / U Ám"),
+    ("lofi_chill", "Lo-Fi / Chill Beats / Tài Chính"),
+    ("phonk_hype", "Phonk / Năng Động / Hành Động"),
+    ("storytelling_piano", "Piano / Drama / Kể Chuyện"),
+    ("general", "Nhạc Nền Tổng Hợp")
+]
+for theme_folder, _ in DEFAULT_BGM_THEMES:
+    (MUSIC_DIR / theme_folder).mkdir(parents=True, exist_ok=True)
 
 # Tự động đọc file .env nếu có
 def _load_env_file(env_path: Path):
@@ -72,6 +96,9 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # "gpt-4o-mini" | "gpt-
 WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")  # "tiny" | "base" | "small"
 ENABLE_DYNAMIC_SUBTITLES = os.getenv("ENABLE_DYNAMIC_SUBTITLES", "true").lower() in ("true", "1", "yes")
 ENABLE_ANTI_DETECT = os.getenv("ENABLE_ANTI_DETECT", "true").lower() in ("true", "1", "yes")
+SUBTITLE_STYLE = os.getenv("SUBTITLE_STYLE", "karaoke_yellow")  # "karaoke_yellow" | "classic_white" | "tiktok_gradient" | "green_neon"
+SUBTITLE_POSITION = os.getenv("SUBTITLE_POSITION", "center")   # "center" | "bottom"
+SUBTITLE_FONT_SIZE = int(os.getenv("SUBTITLE_FONT_SIZE", 54))
 
 # Server config
 SERVER_HOST = "127.0.0.1"

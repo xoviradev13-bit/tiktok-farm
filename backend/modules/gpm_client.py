@@ -45,7 +45,7 @@ class GPMClient:
                 except Exception:
                     continue
 
-        return self.base_url
+        return None
 
     def check_health(self) -> Dict[str, Any]:
         """Kiểm tra GPMLogin App có đang chạy trên máy không"""
@@ -93,8 +93,10 @@ class GPMClient:
         candidates = [
             os.path.expandvars(r"%LOCALAPPDATA%\Programs\GPMLoginGlobal\GPMLoginGlobal.exe"),
             os.path.expandvars(r"%LOCALAPPDATA%\Programs\GPMLogin\GPMLogin.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\GPMLoginGlobal\GPMLoginGlobal.exe"),
             r"C:\Program Files\GPMLogin\GPMLogin.exe",
             r"C:\Program Files (x86)\GPMLogin\GPMLogin.exe",
+            os.path.expandvars(r"%APPDATA%\GPMLogin\GPMLogin.exe"),
         ]
         exe_path = None
         for p in candidates:
@@ -103,14 +105,17 @@ class GPMClient:
                 break
 
         if exe_path:
-            log_event("INFO", f"Phát hiện GPMLogin đang tắt. Đang tự động khởi chạy: {exe_path}")
+            log_event("INFO", f"Phát hiện GPMLogin đang tắt. Đang tự động khởi chạy ứng dụng: {exe_path}")
             try:
                 subprocess.Popen([exe_path], shell=False)
-                for _ in range(12):
+                # GPMLogin là ứng dụng Electron Desktop, chờ tối đa 30 giây để API local khởi động hoàn tất
+                for attempt in range(1, 31):
                     time.sleep(1)
-                    if self.check_health().get("running"):
-                        log_event("INFO", "GPMLogin đã khởi động thành công và API sẵn sàng!")
+                    health = self.check_health()
+                    if health.get("running"):
+                        log_event("INFO", f"GPMLogin đã khởi động thành công và API sẵn sàng sau {attempt}s ({health.get('base_url')})!")
                         return True
+                log_event("WARNING", "Đã khởi chạy GPMLogin nhưng API chưa sẵn sàng sau 30s. Vui lòng kiểm tra cửa sổ GPMLogin.")
             except Exception as e:
                 log_event("ERROR", f"Không thể tự động bật GPMLogin: {e}")
 
@@ -157,17 +162,20 @@ class GPMClient:
         """
         Khởi chạy profile trên GPMLogin
         Trả về remote_debugging_address (VD: 127.0.0.1:12345)
+        - Tự động mở phần mềm GPMLogin nếu đang tắt.
         - low_ram_mode=True: Tiết kiệm tối đa RAM (tắt GPU, tắt load ảnh, ẩn cửa sổ offscreen)
         """
         base = self.discover_api_base()
         if not base:
+            log_event("INFO", f"GPMLogin API chưa kết nối. Đang kích hoạt tự động mở GPMLogin để mở profile {profile_id}...")
             self.ensure_gpm_running()
             base = self.discover_api_base()
         if not base:
+            log_event("WARNING", f"Không thể kết nối GPMLogin API sau khi thử tự mở. Vui lòng kiểm tra phần mềm GPMLogin.")
             return None
 
-        try:
-            url = f"{base}/profiles/start/{profile_id}?skip_proxy_check=true"
+        def _do_start(api_base: str) -> Optional[str]:
+            url = f"{api_base}/profiles/start/{profile_id}?skip_proxy_check=true"
             args_list = []
             if low_ram_mode:
                 args_list.extend([
@@ -201,16 +209,29 @@ class GPMClient:
                 if not isinstance(data, dict):
                     data = json_data
 
-                # Trích xuất remote debug port theo cơ chế của agent.js
                 remote_addr = self._extract_debug_address(data)
                 if remote_addr:
                     log_event("INFO", f"Khởi động thành công GPM profile {profile_id} tại {remote_addr}")
                     return remote_addr
 
             log_event("ERROR", f"Không trích xuất được debug port từ GPM cho profile {profile_id}: {resp.text}")
+            return None
+
+        try:
+            return _do_start(base)
+        except requests.exceptions.ConnectionError as conn_err:
+            log_event("WARNING", f"Mất kết nối tới GPMLogin API khi mở profile {profile_id}. Đang thử tự khởi động lại GPMLogin...")
+            if self.ensure_gpm_running():
+                new_base = self.discover_api_base()
+                if new_base:
+                    try:
+                        return _do_start(new_base)
+                    except Exception as retry_err:
+                        log_event("ERROR", f"Lỗi thử lại sau khi bật GPMLogin: {retry_err}")
+            return None
         except Exception as e:
             log_event("ERROR", f"Ngoại lệ khi mở profile GPM {profile_id}: {str(e)}")
-        return None
+            return None
 
     def stop_profile(self, profile_id: str) -> bool:
         """Đóng profile trên GPMLogin (hỗ trợ cả /stop và /close)"""

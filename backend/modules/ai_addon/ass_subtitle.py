@@ -26,17 +26,44 @@ class ASSSubtitleGenerator:
         output_ass_path: str,
         start_offset: float = 0.0,
         max_duration: Optional[float] = None,
+        style_name: Optional[str] = None,
+        position: Optional[str] = None,
         font_name: str = "Arial Black",
-        font_size: int = 54,
-        primary_color: str = "&H00FFFFFF&",    # Màu chữ mặc định (Trắng)
-        highlight_color: str = "&H0000FFFF&",  # Màu chữ đang nói (Vàng Neon)
-        outline_color: str = "&H00000000&",    # Viền đen
-        margin_v: int = 680                   # Khoảng cách từ đáy (Safe Zone TikTok)
+        font_size: Optional[int] = None,
+        primary_color: Optional[str] = None,
+        highlight_color: Optional[str] = None,
+        outline_color: str = "&H00000000&",
+        margin_v: Optional[int] = None
     ) -> Optional[str]:
         """
         Sinh file .ass từ transcript segments có word-level timestamps.
         start_offset: Thời điểm bắt đầu của đoạn cắt (để đồng bộ time với clip đã cắt).
         """
+        # Map style preset
+        s_name = (style_name or "karaoke_yellow").lower()
+        if not primary_color or not highlight_color:
+            if s_name == "classic_white":
+                primary_color = "&H00FFFFFF&"
+                highlight_color = "&H00E2E8F0&"
+            elif s_name == "tiktok_gradient":
+                primary_color = "&H00FEF200&"  # Cyan
+                highlight_color = "&H00552CFE&"  # TikTok Pink
+            elif s_name == "green_neon":
+                primary_color = "&H00FFFFFF&"
+                highlight_color = "&H0000FF00&"  # Bright Neon Green
+            else:  # karaoke_yellow default
+                primary_color = "&H00FFFFFF&"
+                highlight_color = "&H0000FFFF&"  # Yellow Neon
+
+        # Map position preset
+        pos = (position or "center").lower()
+        if margin_v is None:
+            if pos == "bottom":
+                margin_v = 340  # Sát phần mô tả
+            else:
+                margin_v = 680  # Chính giữa an toàn TikTok (Focus Safe Zone)
+
+        f_size = font_size or 54
         # Header chuẩn ASS cho tỉ lệ 1080x1920
         header = f"""[Script Info]
 Title: TikTok Viral Subtitles
@@ -49,7 +76,7 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: TikTokKaraoke,{font_name},{font_size},{primary_color},{highlight_color},{outline_color},&H80000000&,1,0,0,0,100,100,1,0,1,6,3,2,60,60,{margin_v},1
+Style: TikTokKaraoke,{font_name},{f_size},{primary_color},{highlight_color},{outline_color},&H80000000&,1,0,0,0,100,100,1,0,1,6,3,2,60,60,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

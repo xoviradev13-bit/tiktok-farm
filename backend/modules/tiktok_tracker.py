@@ -429,8 +429,35 @@ class TikTokTracker:
 
         _is_scanning_all = True
         _cancel_scan_flag = False
-        log_event("INFO", "🚀 [TIKTOK TRACKER] Bắt đầu quét Follower Low-RAM cho dàn Profile GPM...")
-        
+        # Tự động đồng bộ với GPMLogin trước khi quét để thêm profile mới và xóa profile đã bị xóa trên GPM
+        try:
+            active_gpm_list = gpm_client.get_profiles()
+            if active_gpm_list:
+                conn_sync = get_connection()
+                cursor_sync = conn_sync.cursor()
+                active_ids = set()
+                for p in active_gpm_list:
+                    active_ids.add(p["id"])
+                    cursor_sync.execute('''
+                        INSERT INTO gpm_profiles (gpm_id, name, raw_proxy)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(gpm_id) DO UPDATE SET
+                            name = excluded.name,
+                            raw_proxy = excluded.raw_proxy
+                    ''', (p["id"], p["name"], p["raw_proxy"]))
+
+                # Xóa các profile trong DB mà không còn tồn tại trên GPMLogin
+                cursor_sync.execute("SELECT gpm_id, name FROM gpm_profiles")
+                for db_p in cursor_sync.fetchall():
+                    if db_p["gpm_id"] not in active_ids:
+                        cursor_sync.execute("DELETE FROM gpm_profiles WHERE gpm_id = ?", (db_p["gpm_id"],))
+                        log_event("INFO", f"[AUTO-SYNC] Đã xóa profile '{db_p['name']}' ({db_p['gpm_id']}) do không còn trên GPMLogin.")
+
+                conn_sync.commit()
+                conn_sync.close()
+        except Exception as sync_err:
+            log_event("WARNING", f"[TIKTOK TRACKER] Bỏ qua tự động đồng bộ trước khi quét: {sync_err}")
+
         try:
             conn = get_connection()
             cursor = conn.cursor()

@@ -5,13 +5,19 @@ from typing import Dict, Any, List, Optional
 from backend.config import DB_PATH
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode = WAL")
+        cursor.execute("PRAGMA synchronous = NORMAL")
+    except Exception:
+        pass
     
     # Bảng kênh YouTube theo dõi
     cursor.execute('''
@@ -40,6 +46,8 @@ def init_db():
         "download_dir": "TEXT DEFAULT ''",
         "render_dir": "TEXT DEFAULT ''",
         "auto_render": "INTEGER DEFAULT 1",
+        "bgm_folder": "TEXT DEFAULT ''",
+        "bgm_volume": "REAL DEFAULT 0.15",
     }
     for col, col_type in new_cols.items():
         if col not in existing_cols:
@@ -79,6 +87,7 @@ def init_db():
         followers_count INTEGER DEFAULT 0,
         total_views INTEGER DEFAULT 0,
         eligible_10k INTEGER DEFAULT 0,
+        notify_status TEXT DEFAULT 'tracking',
         last_checked TEXT,
         status TEXT DEFAULT 'active',
         status_reason TEXT DEFAULT '',
@@ -92,6 +101,13 @@ def init_db():
     if "status_reason" not in existing_gpm_cols:
         try:
             cursor.execute("ALTER TABLE gpm_profiles ADD COLUMN status_reason TEXT DEFAULT ''")
+        except Exception:
+            pass
+    if "notify_status" not in existing_gpm_cols:
+        try:
+            cursor.execute("ALTER TABLE gpm_profiles ADD COLUMN notify_status TEXT DEFAULT 'tracking'")
+            cursor.execute("UPDATE gpm_profiles SET notify_status = 'sent' WHERE eligible_10k = 1 OR followers_count >= 10000")
+            cursor.execute("UPDATE gpm_profiles SET notify_status = 'tracking' WHERE notify_status IS NULL OR notify_status = ''")
         except Exception:
             pass
 
@@ -113,6 +129,22 @@ def init_db():
     )
     ''')
 
+    # Migration columns cho upload_tasks nếu chưa có
+    cursor.execute("PRAGMA table_info(upload_tasks)")
+    existing_ut_cols = {row["name"] for row in cursor.fetchall()}
+    for col, col_type in [
+        ("video_path", "TEXT DEFAULT ''"),
+        ("part_number", "INTEGER DEFAULT 1"),
+        ("retry_count", "INTEGER DEFAULT 0"),
+        ("retry_after", "TEXT"),
+        ("processing_started_at", "TEXT"),
+    ]:
+        if col not in existing_ut_cols:
+            try:
+                cursor.execute(f"ALTER TABLE upload_tasks ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
+
     # Bảng Nhật ký hệ thống (Logs)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS system_logs (
@@ -132,16 +164,48 @@ def init_db():
     )
     ''')
 
-    # Bảng Kênh Telegram nhận thông báo cảnh báo 10k follower (hỗ trợ nhiều kênh, bật/tắt độc lập)
+    # Bảng Kênh Telegram nhận thông báo (hỗ trợ nhiều kênh, bật/tắt độc lập và phân loại thông báo)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS telegram_channels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         chat_id TEXT NOT NULL,
         is_active INTEGER DEFAULT 1,
+        notify_10k INTEGER DEFAULT 1,
+        notify_issues INTEGER DEFAULT 1,
+        notify_daily_report INTEGER DEFAULT 1,
+        daily_report_time TEXT DEFAULT '21:00',
+        last_daily_report TEXT DEFAULT '',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+
+    # Migration columns cho telegram_channels nếu chưa có
+    cursor.execute("PRAGMA table_info(telegram_channels)")
+    existing_tg_cols = {row["name"] for row in cursor.fetchall()}
+    new_tg_cols = {
+        "notify_10k": "INTEGER DEFAULT 1",
+        "notify_issues": "INTEGER DEFAULT 1",
+        "notify_daily_report": "INTEGER DEFAULT 1",
+        "daily_report_time": "TEXT DEFAULT '21:00'",
+        "last_daily_report": "TEXT DEFAULT ''",
+    }
+    for col, col_type in new_tg_cols.items():
+        if col not in existing_tg_cols:
+            try:
+                cursor.execute(f"ALTER TABLE telegram_channels ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
+
+    # Đảm bảo các giá trị NULL được chuẩn hóa về mặc định
+    try:
+        cursor.execute("UPDATE telegram_channels SET notify_10k = 1 WHERE notify_10k IS NULL")
+        cursor.execute("UPDATE telegram_channels SET notify_issues = 1 WHERE notify_issues IS NULL")
+        cursor.execute("UPDATE telegram_channels SET notify_daily_report = 1 WHERE notify_daily_report IS NULL")
+        cursor.execute("UPDATE telegram_channels SET daily_report_time = '21:00' WHERE daily_report_time IS NULL OR daily_report_time = ''")
+        cursor.execute("UPDATE telegram_channels SET last_daily_report = '' WHERE last_daily_report IS NULL")
+    except Exception:
+        pass
 
     # Tự động nạp kênh mặc định từ cấu hình cũ nếu bảng telegram_channels còn trống
     try:
@@ -156,7 +220,7 @@ def init_db():
                 seed_chat = os.getenv("TELEGRAM_CHAT_ID", "").strip()
             if seed_chat:
                 cursor.execute(
-                    "INSERT INTO telegram_channels (name, chat_id, is_active) VALUES (?, ?, 1)",
+                    "INSERT INTO telegram_channels (name, chat_id, is_active, notify_10k, notify_issues, notify_daily_report, daily_report_time) VALUES (?, ?, 1, 1, 1, 1, '21:00')",
                     ("Kênh Mặc Định", seed_chat)
                 )
     except Exception:
@@ -203,6 +267,11 @@ def init_db():
         "ai_model": "TEXT DEFAULT 'default'",
         "min_video_duration": "INTEGER DEFAULT NULL",
         "max_video_duration": "INTEGER DEFAULT NULL",
+        "add_part_label": "INTEGER DEFAULT 1",
+        "clips_per_video": "INTEGER DEFAULT 3",
+        "bgm_folder": "TEXT DEFAULT ''",
+        "bgm_volume": "REAL DEFAULT 0.15",
+        "min_post_interval_minutes": "INTEGER DEFAULT 60",
     }
     for col, col_type in new_camp_cols.items():
         if col not in existing_camp_cols:
@@ -243,6 +312,15 @@ def init_db():
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+
+    # Các chỉ mục tối ưu hóa hiệu năng cao cho hàng ngàn bản ghi & đa luồng
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_upload_tasks_status_sched ON upload_tasks(status, scheduled_time)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_upload_tasks_profile_status ON upload_tasks(gpm_profile_id, status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_upload_tasks_video_part ON upload_tasks(video_id, part_number)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_campaign_logs_camp_id ON campaign_logs(campaign_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_videos_channel_status ON videos(channel_id, status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_channels_active ON channels(is_active, auto_download)")
 
     conn.commit()
     conn.close()
@@ -288,12 +366,33 @@ def log_campaign_event(campaign_id: int, level: str, action: str, message: str, 
             "INSERT INTO campaign_logs (campaign_id, level, action, message, details) VALUES (?, ?, ?, ?, ?)",
             (campaign_id, level, action, message, details)
         )
+        cursor.execute(
+            "INSERT INTO system_logs (level, message, details) VALUES (?, ?, ?)",
+            (level, f"[Chiến dịch #{campaign_id}] {message}", details)
+        )
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"[CAMPAIGN LOG ERROR] {e}")
-    # Cũng ghi vào system_logs để đồng bộ
-    log_event(level, f"[Chiến dịch #{campaign_id}] {message}", details)
+
+    # Ghi song song vào file app.log chi tiết
+    try:
+        from backend.logger import get_logger
+        l = get_logger("system")
+        lvl = (level or "INFO").upper()
+        formatted_msg = f"[Chiến dịch #{campaign_id}] {message}"
+        if details:
+            formatted_msg += f" | Chi tiết: {details}"
+        if lvl in ("ERROR", "CRITICAL"):
+            l.error(formatted_msg)
+        elif lvl == "WARNING":
+            l.warning(formatted_msg)
+        elif lvl == "DEBUG":
+            l.debug(formatted_msg)
+        else:
+            l.info(formatted_msg)
+    except Exception:
+        pass
 
 def record_ai_usage(
     provider: str,
@@ -444,6 +543,20 @@ def clear_ai_usage_logs() -> bool:
         return True
     except Exception:
         return False
+
+def is_save_by_channel_folder_enabled() -> bool:
+    """Kiểm tra xem tính năng lưu video theo thư mục riêng từng kênh có đang bật không (mặc định bật)"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'save_by_channel_folder'")
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return True
+        return bool(row["value"] == "1" or row["value"] is True or str(row["value"]).lower() == "true")
+    except Exception:
+        return True
 
 # Khởi tạo DB ngay khi nạp module
 init_db()

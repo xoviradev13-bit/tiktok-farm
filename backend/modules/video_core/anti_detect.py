@@ -81,18 +81,41 @@ class AntiDetectEngine:
             sub_filters.append(draw_part)
             current_stream = "v_part"
 
-        # 6. Banner Hook giật tít trên nền mờ phía trên (Y = 220)
+        # 6. Banner Hook giật tít trên nền mờ phía trên (Y = 220-230)
         if hook_text and hook_text.strip():
             # Loại bỏ emoji và ký tự đặc biệt để tránh ô vuông ký tự lỗi trong FFmpeg drawtext
             import re as _re
             clean_hook = _re.sub(r'[^\w\s\-\?\!\,\.\:\(\)\/]', '', hook_text)
-            clean_hook = clean_hook.replace("'", "").replace(":", " - ").strip()
-            # Giới hạn tối đa 48 ký tự để không bị tràn khung hình 1080px
-            if len(clean_hook) > 48:
-                clean_hook = clean_hook[:45] + "..."
+            clean_hook = clean_hook.replace("'", "").replace("%", "").replace("\\", "").replace(":", " - ").strip()
+
+            # Cắt ngắn thông minh theo ranh giới từ (Smart Word-Boundary Truncation - tuyệt đối không cắt đôi từ)
+            max_chars = 52
+            if len(clean_hook) > max_chars:
+                words = clean_hook[:max_chars].split()
+                if len(words) > 1:
+                    clean_hook = " ".join(words[:-1]).rstrip(" ,.-:") + "..."
+                else:
+                    clean_hook = clean_hook[:max_chars].rstrip() + "..."
+
+            # Tự động điều chỉnh kích cỡ font chữ (Dynamic Font Scaling) theo độ dài tiêu đề
+            # giúp tiêu đề luôn nằm trọn vẹn trong khung hình 1080px mà không bị tràn viền hay che mất chữ
+            h_len = len(clean_hook)
+            if h_len <= 26:
+                hook_fontsize = 48
+                hook_y = 220
+            elif h_len <= 38:
+                hook_fontsize = 40
+                hook_y = 224
+            elif h_len <= 48:
+                hook_fontsize = 34
+                hook_y = 228
+            else:
+                hook_fontsize = 30
+                hook_y = 230
+
             draw_hook = (
-                f"[{current_stream}]drawtext=font='Arial':text='{clean_hook}':fontcolor=yellow:fontsize=48:"
-                f"box=1:boxcolor=black@0.8:boxborderw=14:x=(w-text_w)/2:y=220[v_hook]"
+                f"[{current_stream}]drawtext=font='Arial':text='{clean_hook}':fontcolor=yellow:fontsize={hook_fontsize}:"
+                f"box=1:boxcolor=black@0.8:boxborderw=14:x=(w-text_w)/2:y={hook_y}[v_hook]"
             )
             sub_filters.append(draw_hook)
             current_stream = "v_hook"

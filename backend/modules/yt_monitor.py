@@ -1,6 +1,7 @@
 import json
 import time
 import urllib.request
+import urllib.error
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional
 from backend.database import get_connection, log_event, log_campaign_event
@@ -139,16 +140,35 @@ class YouTubeRSSMonitor:
                         target_duration=int(camp.get("video_duration") or 65),
                         flip_horizontal=bool(camp.get("flip_horizontal", 1)),
                         speed_factor=float(camp.get("speed_factor") or 1.03),
-                        generate_hook=True
+                        add_part_label=bool(camp.get("add_part_label", 1)),
+                        generate_hook=True,
+                        clips_count=int(camp.get("clips_per_video") or 1),
+                        subtitle_style=camp.get("subtitle_style"),
+                        bgm_folder=(channel_obj.get("bgm_folder") if camp.get("bgm_folder") == "inherit" and channel_obj else camp.get("bgm_folder")) or None,
+                        bgm_volume=float(channel_obj.get("bgm_volume", 0.15) if camp.get("bgm_folder") == "inherit" and channel_obj and channel_obj.get("bgm_volume") is not None else (camp.get("bgm_volume") or 0.15))
                     )
                     if res.get("status") == "success" and video_db_id:
-                        log_campaign_event(cid, "SUCCESS", "render", f"Render Smart AI thành công video {video_id} -> {res.get('rendered_file')}")
-                        distributor.schedule_campaign_upload(
-                            video_id=video_db_id,
-                            campaign=camp,
-                            title=res.get("ai_title") or video_title,
-                            tags=f"{res.get('ai_hashtags', '')}\n\n{res.get('ai_description', '')}"
-                        )
+                        rendered_files = res.get("rendered_files") or ([res.get("rendered_file")] if res.get("rendered_file") else [])
+                        log_campaign_event(cid, "SUCCESS", "render", f"Render Smart AI thành công video {video_id} ({len(rendered_files)} clip) -> {rendered_files[0] if rendered_files else ''}")
+                        
+                        assigned_profile_id = None
+                        for idx, r_file in enumerate(rendered_files, 1):
+                            part_title = res.get("ai_title") or video_title
+                            if len(rendered_files) > 1 and f"Part {idx}" not in part_title:
+                                part_title = f"{part_title} - Part {idx}"
+                            
+                            sched_res = distributor.schedule_campaign_upload(
+                                video_id=video_db_id,
+                                campaign=camp,
+                                title=part_title,
+                                tags=f"{res.get('ai_hashtags', '')}\n\n{res.get('ai_description', '')}",
+                                video_path=r_file,
+                                part_number=idx,
+                                force_profile_id=assigned_profile_id
+                            )
+                            # Khóa cùng 1 profile GPM cho chuỗi Part 1, Part 2, Part 3... để người xem theo dõi liền mạch
+                            if sched_res and not assigned_profile_id:
+                                assigned_profile_id = sched_res.get("profile_id")
                 except Exception as e:
                     log_campaign_event(cid, "ERROR", "render", f"Lỗi render AI theo chiến dịch: {str(e)}")
         else:
@@ -158,10 +178,12 @@ class YouTubeRSSMonitor:
                     ai_video_engine.auto_slice_and_render_parts(
                         input_file=file_path,
                         video_id=video_id,
-                        total_duration=duration,
+                        total_duration=int(duration or 65),
                         channel_name=channel_name,
                         video_title=video_title,
-                        output_dir=channel_obj.get("render_dir") or None
+                        output_dir=channel_obj.get("render_dir") or None,
+                        bgm_folder=channel_obj.get("bgm_folder") or None,
+                        bgm_volume=float(channel_obj["bgm_volume"]) if channel_obj.get("bgm_volume") is not None else None
                     )
                 except Exception as re_err:
                     log_event("WARNING", f"Lỗi auto-render video {video_id}: {str(re_err)}")
@@ -258,7 +280,7 @@ class YouTubeRSSMonitor:
                     new_items.append({"title": v["title"], "video_id": vid})
 
                     self.handle_video_post_download(
-                        file_path=res.get("file_path"),
+                        file_path=str(res.get("file_path") or ""),
                         video_id=vid,
                         channel_id=channel_id,
                         channel_name=ch_name,
@@ -324,7 +346,7 @@ class YouTubeRSSMonitor:
                         channel_downloaded += 1
 
                         self.handle_video_post_download(
-                            file_path=res.get("file_path"),
+                            file_path=str(res.get("file_path") or ""),
                             video_id=vid,
                             channel_id=ch_id,
                             channel_name=ch_name,
