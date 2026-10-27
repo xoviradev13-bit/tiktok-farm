@@ -154,10 +154,10 @@ class YouTubeDownloader:
                             downloaded_file = str(f)
                             break
 
-                if not os.path.exists(downloaded_file):
-                    warn_msg = f"Không tìm thấy file tải về cho video '{title}' ({video_url})"
+                if not os.path.exists(downloaded_file) or os.path.getsize(downloaded_file) < 1024:
+                    warn_msg = f"File tải về bị lỗi, không tồn tại hoặc rỗng (<1KB): '{title}' ({video_url})"
                     log_event("WARNING", warn_msg)
-                    return {"success": False, "message": warn_msg}
+                    return None
 
                 # Lưu vào database
                 conn = get_connection()
@@ -172,6 +172,12 @@ class YouTubeDownloader:
                     status='downloaded',
                     error_message=NULL
                 ''', (channel_id, video_id, title, video_url, duration, downloaded_file, tags))
+
+                # Ghi nhận vào lịch sử chống trùng lặp vĩnh viễn
+                cursor.execute('''
+                    INSERT OR IGNORE INTO download_history (yt_video_id, channel_id, title)
+                    VALUES (?, ?, ?)
+                ''', (video_id, channel_id, title))
                 
                 cursor.execute("SELECT id FROM videos WHERE yt_video_id = ?", (video_id,))
                 row = cursor.fetchone()

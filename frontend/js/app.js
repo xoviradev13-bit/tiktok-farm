@@ -133,6 +133,12 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function isAbsolutePath(p) {
+    if (!p || typeof p !== 'string') return false;
+    const clean = p.trim();
+    return /^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith('\\\\') || clean.startsWith('/');
+}
+
 // Enhanced Toast notification helper supporting types ('error', 'warning', 'success', 'info') and structured error formatting
 let toastDismissTimer = null;
 function showToast(message, type = 'info') {
@@ -417,6 +423,13 @@ function switchTab(tabId) {
     } else if (tabId === 'tab-saved-channels') {
         tabId = 'tab-sources';
         switchSourceSubTab('saved');
+    } else if (tabId === 'tab-sources') {
+        const btnSaved = document.getElementById('btnSubnavSaved');
+        if (btnSaved && btnSaved.classList.contains('active')) {
+            switchSourceSubTab('saved');
+        } else {
+            switchSourceSubTab('search');
+        }
     } else if (tabId === 'tab-pipeline') {
         tabId = 'tab-auto-pipeline';
     } else if (tabId === 'tab-ai-editor') {
@@ -743,7 +756,7 @@ function _fallbackCopy(text, msg) {
 }
 
 // ==================== CSV Export Helper ====================
-function downloadCsv(filename, rows) {
+async function downloadCsv(filename, rows) {
     if (!rows || !rows.length) {
         showToast('Không có dữ liệu để xuất file CSV!', true);
         return;
@@ -757,6 +770,32 @@ function downloadCsv(filename, rows) {
     ).join('\r\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    // 1. Thử mở cửa sổ "Save As" (Chọn thư mục lưu) của hệ thống nếu trình duyệt hỗ trợ
+    if (typeof window.showSaveFilePicker === 'function') {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: filename,
+                types: [{
+                    description: 'Tệp CSV (Excel UTF-8)',
+                    accept: { 'text/csv': ['.csv'] }
+                }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            showToast(`Đã xuất thành công ${rows.length - 1} dòng ra file "${handle.name || filename}"!`);
+            return;
+        } catch (err) {
+            // Người dùng bấm Hủy (Cancel) trên hộp thoại chọn thư mục
+            if (err.name === 'AbortError') {
+                return;
+            }
+            console.warn('showSaveFilePicker không khả dụng, chuyển sang tải tự động:', err);
+        }
+    }
+
+    // 2. Dự phòng: Tự động tải xuống qua thẻ download mặc định của trình duyệt
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1444,8 +1483,10 @@ async function toggleSaveChannel(origIdx) {
             const data = await res.json();
             if (data.status === 'success') {
                 ch.is_saved = false;
+                cachedSavedChannels = (cachedSavedChannels || []).filter(c => c.channel_id !== ch.channel_id);
                 showToast(`Đã bỏ lưu kênh "${ch.title}"!`);
                 loadDashboardStats();
+                loadSavedChannels();
                 renderYtChannelsTable();
             } else {
                 showToast('Lỗi bỏ lưu kênh: ' + (data.message || 'Không rõ'), true);
@@ -1474,8 +1515,12 @@ async function toggleSaveChannel(origIdx) {
                 body: JSON.stringify([ch])
             });
             ch.is_saved = true;
+            if (!cachedSavedChannels.some(c => c.channel_id === ch.channel_id)) {
+                cachedSavedChannels.unshift({ ...ch, is_saved: true });
+            }
             showToast(`Đã lưu kênh "${ch.title}" vào danh sách theo dõi!`);
             loadDashboardStats();
+            loadSavedChannels();
             renderYtChannelsTable();
         } catch (err) {
             showToast('Lỗi lưu kênh: ' + err.message, true);
@@ -1571,24 +1616,50 @@ function toggleSaveFromMenu(index) {
 async function openChannelDetailModal(target) {
     closeAllActionMenus();
     let ch = null;
+    let targetCid = '';
     if (typeof target === 'number') {
         ch = rawYtChannels[target];
+        if (ch) targetCid = ch.channel_id;
     } else if (typeof target === 'string') {
-        ch = rawYtChannels.find(c => c.channel_id === target) ||
-            cachedSavedChannels.find(c => c.channel_id === target);
-        // If not found in memory, fetch from backend API
-        if (!ch) {
-            try {
-                const res = await fetch(`/api/youtube/channels/${encodeURIComponent(target)}`);
-                if (res.ok) {
-                    ch = await res.json();
-                }
-            } catch (err) {
-                console.warn('Cannot fetch channel detail:', err);
-            }
-        }
+        targetCid = target;
+        ch = (cachedSavedChannels || []).find(c => c.channel_id === target || (c.channel_id && c.channel_id.toLowerCase() === target.toLowerCase())) ||
+            (rawYtChannels || []).find(c => c.channel_id === target || (c.channel_id && c.channel_id.toLowerCase() === target.toLowerCase()));
     } else if (target && typeof target === 'object') {
         ch = target;
+        if (ch) targetCid = ch.channel_id;
+    }
+
+    const cid = targetCid || (ch ? ch.channel_id : '');
+
+    // Kiểm tra trạng thái đã lưu:
+    // 1. Kiểm tra cờ is_saved hiện tại và cachedSavedChannels trong bộ nhớ
+    let isChannelSaved = Boolean(
+        (ch && ch.is_saved) ||
+        (cachedSavedChannels && cachedSavedChannels.some(sc => 
+            sc.channel_id === cid || 
+            (sc.channel_id && cid && sc.channel_id.toLowerCase() === cid.toLowerCase())
+        ))
+    );
+
+    // 2. Nếu chưa chắc chắn hoặc ch chưa có đầy đủ thông tin, truy vấn DB để xác thực chính xác
+    if (cid && (!ch || !isChannelSaved)) {
+        try {
+            const res = await fetch(`/api/youtube/channels/${encodeURIComponent(cid)}`);
+            if (res.ok) {
+                const dbCh = await res.json();
+                if (dbCh && !dbCh.error) {
+                    if (dbCh.is_saved) {
+                        isChannelSaved = true;
+                    }
+                    ch = { ...(ch || {}), ...dbCh };
+                    if (isChannelSaved && !cachedSavedChannels.some(sc => sc.channel_id === dbCh.channel_id)) {
+                        cachedSavedChannels.unshift({ ...dbCh, is_saved: true });
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('Cannot fetch channel detail from backend:', err);
+        }
     }
 
     if (!ch) {
@@ -1596,6 +1667,7 @@ async function openChannelDetailModal(target) {
         return;
     }
 
+    ch.is_saved = isChannelSaved;
     activeDetailChannel = ch;
 
     const modal = document.getElementById('channelDetailModal');
@@ -1618,7 +1690,10 @@ async function openChannelDetailModal(target) {
     }
 
     const elTitle = document.getElementById('detailChannelTitle');
-    if (elTitle) elTitle.textContent = ch.title || 'Kênh YouTube';
+    if (elTitle) {
+        elTitle.textContent = ch.title || 'Kênh YouTube';
+        elTitle.title = ch.title || '';
+    }
 
     const elActiveBadge = document.getElementById('detailChannelActiveBadge');
     if (elActiveBadge) {
@@ -1633,8 +1708,16 @@ async function openChannelDetailModal(target) {
 
     const elHandle = document.getElementById('detailChannelHandle');
     if (elHandle) {
-        elHandle.textContent = ch.handle ? ch.handle : '';
-        elHandle.style.display = ch.handle ? 'inline-block' : 'none';
+        const handleStr = ch.handle ? ch.handle : '';
+        elHandle.textContent = handleStr;
+        elHandle.title = handleStr;
+        elHandle.style.display = handleStr ? 'inline-block' : 'none';
+    }
+
+    const btnRefModal = document.getElementById('btnRefreshChannelStats');
+    if (btnRefModal) {
+        btnRefModal.disabled = false;
+        btnRefModal.innerHTML = '<i class="fa-solid fa-arrows-rotate text-cyan"></i> Cập nhật kênh';
     }
 
     const elId = document.getElementById('detailChannelId');
@@ -1832,8 +1915,16 @@ function closeChannelDetailModal() {
     activeDetailChannel = null;
 }
 
+let currentModalChannelVideos = [];
+let currentModalChannelTitle = '';
+let currentModalChannelId = '';
+
 async function openChannelVideosModal(channelId, channelTitle = '') {
     closeAllActionMenus();
+    currentModalChannelVideos = [];
+    currentModalChannelTitle = channelTitle || channelId;
+    currentModalChannelId = channelId;
+
     const modal = document.getElementById('modalChannelVideos');
     const titleEl = document.getElementById('modalChannelVideosTitle');
     const subEl = document.getElementById('modalChannelVideosSub');
@@ -1858,6 +1949,7 @@ async function openChannelVideosModal(channelId, channelTitle = '') {
         const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/videos`);
         const data = await res.json();
         const vids = data.videos || [];
+        currentModalChannelVideos = vids;
         if (statsEl) statsEl.textContent = `${vids.length} Video`;
 
         if (!vids.length) {
@@ -1950,6 +2042,43 @@ function closeChannelVideosModal() {
     }
 }
 
+function exportCurrentChannelVideosCsv() {
+    if (!currentModalChannelVideos || !currentModalChannelVideos.length) {
+        showToast('Kênh này chưa có video nào được tải về để xuất CSV!', true);
+        return;
+    }
+    const headers = [
+        'ID Video (DB)',
+        'YouTube Video ID',
+        'Tiêu Đề Video',
+        'Kênh Nguồn',
+        'Channel ID',
+        'Thời Lượng (giây)',
+        'Trạng Thái',
+        'Đường Dẫn File Gốc',
+        'Đường Dẫn Render 9:16',
+        'Thời Gian Tải'
+    ];
+    const rows = [headers];
+    currentModalChannelVideos.forEach(v => {
+        rows.push([
+            v.id || '',
+            v.yt_video_id || '',
+            v.title || '',
+            v.channel_name || currentModalChannelTitle || '',
+            v.channel_id || currentModalChannelId || '',
+            v.duration ? Math.round(v.duration) : '',
+            v.status || '',
+            v.file_path || '',
+            v.rendered_path || '',
+            v.created_at || ''
+        ]);
+    });
+    const safeTitle = (currentModalChannelTitle || currentModalChannelId || 'kenh').replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1EA0-\u1EF9-]/g, '_');
+    const dateStr = new Date().toISOString().split('T')[0];
+    downloadCsv(`video_${safeTitle}_${dateStr}.csv`, rows);
+}
+
 async function deleteChannelVideoModalItem(videoId, channelId, videoTitle) {
     const confirmed = await showConfirmDialog({
         title: 'Xác Nhận Xóa Video',
@@ -1984,11 +2113,25 @@ function updateDetailModalSaveBtn() {
     const btn = document.getElementById('btnToggleSaveFromDetail');
     if (!btn || !activeDetailChannel) return;
 
-    if (activeDetailChannel.is_saved) {
-        btn.className = 'btn btn-secondary btn-sm';
-        btn.innerHTML = '<i class="fa-solid fa-check text-success"></i> <span id="detailSaveBtnText">Đã Lưu Kênh</span>';
+    const cid = activeDetailChannel.channel_id;
+    const isSaved = Boolean(
+        activeDetailChannel.is_saved ||
+        (cachedSavedChannels && cachedSavedChannels.some(sc => 
+            sc.channel_id === cid || 
+            (sc.channel_id && cid && sc.channel_id.toLowerCase() === cid.toLowerCase())
+        ))
+    );
+    activeDetailChannel.is_saved = isSaved;
+
+    if (isSaved) {
+        btn.className = 'btn btn-danger btn-sm has-tooltip tooltip-left';
+        btn.setAttribute('data-tooltip', 'Bỏ lưu kênh khỏi danh sách theo dõi');
+        btn.title = 'Bỏ lưu kênh khỏi danh sách theo dõi';
+        btn.innerHTML = '<i class="fa-solid fa-trash-can"></i> <span id="detailSaveBtnText">Bỏ lưu</span>';
     } else {
-        btn.className = 'btn btn-primary btn-sm';
+        btn.className = 'btn btn-primary btn-sm has-tooltip tooltip-left';
+        btn.setAttribute('data-tooltip', 'Lưu kênh vào danh sách theo dõi');
+        btn.title = 'Lưu kênh vào danh sách theo dõi';
         btn.innerHTML = '<i class="fa-solid fa-bookmark"></i> <span id="detailSaveBtnText">Lưu Kênh</span>';
     }
 }
@@ -1999,6 +2142,15 @@ async function toggleSaveFromDetailModal() {
     const cid = ch.channel_id;
 
     if (ch.is_saved) {
+        const confirmed = await showConfirmDialog({
+            title: 'Bỏ Lưu Kênh',
+            message: `Bạn có chắc chắn muốn bỏ theo dõi kênh "${ch.title || cid}"?`,
+            details: 'Kênh sẽ bị xóa khỏi danh sách giám sát và dừng tự động tải/render video mới.',
+            confirmText: 'Bỏ Lưu',
+            confirmClass: 'btn-danger'
+        });
+        if (!confirmed) return;
+
         try {
             const res = await fetch('/api/youtube/unsave-channel', {
                 method: 'POST',
@@ -2008,10 +2160,12 @@ async function toggleSaveFromDetailModal() {
             const data = await res.json();
             if (data.status === 'success') {
                 ch.is_saved = false;
-                const raw = rawYtChannels.find(c => c.channel_id === cid);
+                cachedSavedChannels = (cachedSavedChannels || []).filter(c => c.channel_id !== cid);
+                const raw = (rawYtChannels || []).find(c => c.channel_id === cid);
                 if (raw) raw.is_saved = false;
-                showToast(`Đã bỏ lưu kênh "${ch.title}"!`);
+                showToast(`Đã bỏ lưu kênh "${ch.title || cid}"!`);
                 updateDetailModalSaveBtn();
+                renderSavedChannelsTable();
                 renderYtChannelsTable();
                 loadDashboardStats();
                 renderSimilarChannels(ch);
@@ -2029,10 +2183,14 @@ async function toggleSaveFromDetailModal() {
                 body: JSON.stringify([ch])
             });
             ch.is_saved = true;
-            const raw = rawYtChannels.find(c => c.channel_id === cid);
+            if (!cachedSavedChannels.some(c => c.channel_id === cid)) {
+                cachedSavedChannels.unshift({ ...ch, is_saved: true });
+            }
+            const raw = (rawYtChannels || []).find(c => c.channel_id === cid);
             if (raw) raw.is_saved = true;
-            showToast(`Đã lưu kênh "${ch.title}"!`);
+            showToast(`Đã lưu kênh "${ch.title || cid}"!`);
             updateDetailModalSaveBtn();
+            renderSavedChannelsTable();
             renderYtChannelsTable();
             loadDashboardStats();
             renderSimilarChannels(ch);
@@ -2200,14 +2358,6 @@ async function toggleSaveChannelById(channelId) {
             showToast('Lỗi: ' + e.message, true);
         }
     }
-}
-
-async function loadSavedChannels() {
-    try {
-        const res = await fetch('/api/youtube/channels');
-        const channels = await res.json();
-        // Cập nhật giao diện nếu cần
-    } catch (err) { }
 }
 
 // 3. AI Video Editor
@@ -2434,7 +2584,16 @@ function resetGpmFilters() {
     renderGpmProfilesTable();
 }
 
-function exportGpmProfilesCsv() {
+async function exportGpmProfilesCsv() {
+    if (!cachedGpmProfiles || !cachedGpmProfiles.length) {
+        try {
+            const res = await fetch('/api/gpm/profiles');
+            const data = await res.json();
+            if (Array.isArray(data)) cachedGpmProfiles = data;
+        } catch (e) {
+            console.warn('Lỗi tải profiles trước khi xuất CSV:', e);
+        }
+    }
     const filter10k = document.getElementById('filterGpm10k')?.value || 'all';
     const filterNotify = document.getElementById('filterGpmNotify')?.value || 'all';
     const filterNick = document.getElementById('filterGpmNick')?.value || 'all';
@@ -3445,7 +3604,7 @@ async function loadSavedChannels(btn) {
     try {
         const res = await fetch('/api/youtube/channels');
         const channels = await res.json();
-        cachedSavedChannels = channels || [];
+        cachedSavedChannels = (channels || []).map(c => ({ ...c, is_saved: true }));
 
         const total = cachedSavedChannels.length;
         const activeCount = cachedSavedChannels.filter(c => c.is_active === 1).length;
@@ -3648,7 +3807,16 @@ function getFilteredSavedChannels() {
     return list;
 }
 
-function exportSavedChannelsCsv() {
+async function exportSavedChannelsCsv() {
+    if (!cachedSavedChannels || !cachedSavedChannels.length) {
+        try {
+            const res = await fetch('/api/youtube/channels');
+            const data = await res.json();
+            if (Array.isArray(data)) cachedSavedChannels = data;
+        } catch (e) {
+            console.warn('Lỗi tải kênh trước khi xuất CSV:', e);
+        }
+    }
     let list = getFilteredSavedChannels();
     if (!list || !list.length) {
         list = cachedSavedChannels || [];
@@ -3882,6 +4050,9 @@ function renderSavedChannelsTable() {
                             <button type="button" class="action-dropdown-item" onclick="openChannelVideosModal('${escapeHtml(cid)}', '${escapeHtml(displayTitle || c.title || '')}')">
                                 <i class="fa-solid fa-film" style="color:#00f2fe;"></i> Chi Tiết Video
                             </button>
+                            <button type="button" class="action-dropdown-item" onclick="refreshChannelStatsFromMenu('${escapeHtml(cid)}', this)">
+                                <i class="fa-solid fa-arrows-rotate" style="color:#10b981;"></i> Cập nhật chỉ số kênh
+                            </button>
                             <button type="button" class="action-dropdown-item" onclick="scanSingleChannel('${escapeHtml(cid)}', this)">
                                 <i class="fa-solid fa-bolt" style="color:#fe2c55;"></i> Quét video mới ngay
                             </button>
@@ -3947,7 +4118,93 @@ async function toggleChannelStatusInline(channelId, checkbox) {
     }
 }
 
-async function scanSingleChannel(channelId, btn) {
+async function refreshChannelStatsFromMenu(channelId, btn) {
+    closeAllActionMenus();
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-emerald"></i> Đang cập nhật...';
+    }
+    showToast(`Đang cập nhật chỉ số kênh ${channelId} từ YouTube...`);
+
+    try {
+        const res = await fetch('/api/youtube/channels/refresh-stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel_id: channelId })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            showToast(data.message || 'Đã cập nhật chỉ số kênh thành công!');
+            if (data.channel) {
+                const idx = (cachedSavedChannels || []).findIndex(c => c.channel_id === channelId);
+                if (idx !== -1) {
+                    cachedSavedChannels[idx] = { ...cachedSavedChannels[idx], ...data.channel };
+                }
+                if (activeDetailChannel && activeDetailChannel.channel_id === channelId) {
+                    activeDetailChannel = { ...activeDetailChannel, ...data.channel };
+                    openChannelDetailModal(activeDetailChannel);
+                }
+            }
+            renderSavedChannelsTable();
+        } else {
+            showToast('Lỗi cập nhật: ' + (data.detail || data.message || 'Không thể làm mới chỉ số'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi khi cập nhật kênh: ' + err.message, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
+
+async function refreshActiveChannelStats(btn) {
+    if (!activeDetailChannel || !activeDetailChannel.channel_id) {
+        showToast('Không tìm thấy thông tin kênh đang xem!', true);
+        return;
+    }
+    const channelId = activeDetailChannel.channel_id;
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Đang cập nhật...';
+    }
+    showToast(`Đang cập nhật chỉ số mới nhất từ YouTube...`);
+
+    try {
+        const res = await fetch('/api/youtube/channels/refresh-stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel_id: channelId })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            showToast(data.message || 'Đã cập nhật chỉ số kênh thành công!');
+            if (data.channel) {
+                activeDetailChannel = { ...activeDetailChannel, ...data.channel };
+                const idx = (cachedSavedChannels || []).findIndex(c => c.channel_id === channelId);
+                if (idx !== -1) {
+                    cachedSavedChannels[idx] = { ...cachedSavedChannels[idx], ...data.channel };
+                }
+                openChannelDetailModal(activeDetailChannel);
+                renderSavedChannelsTable();
+            }
+        } else {
+            showToast('Lỗi cập nhật: ' + (data.detail || data.message || 'Không thể làm mới chỉ số'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối khi cập nhật kênh: ' + err.message, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
+
+async function scanSingleChannel(channelId, btn, maxVideos = null) {
     closeAllActionMenus();
     const origHtml = btn ? btn.innerHTML : '';
     if (btn) {
@@ -3957,15 +4214,20 @@ async function scanSingleChannel(channelId, btn) {
     showToast(`Đang quét RSS kênh ${channelId}...`);
 
     try {
+        const payload = { channel_id: channelId };
+        if (maxVideos && maxVideos > 0) {
+            payload.max_videos = maxVideos;
+        }
         const res = await fetch('/api/youtube/channels/scan-now', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel_id: channelId })
+            body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (data.status === 'success') {
+            const limitNote = data.max_limit ? ` (giới hạn ${data.max_limit} video)` : '';
             if (data.new_videos > 0) {
-                showToast(`Đã tìm thấy & tải về ${data.new_videos} video mới từ kênh ${data.title}!`);
+                showToast(`Đã tìm thấy & tải về ${data.new_videos} video mới từ kênh ${data.title}!${limitNote}`);
             } else {
                 showToast(`Kênh ${data.title}: Chưa có video mới nào (đã kiểm tra ${data.total_rss || 0} mục RSS).`);
             }
@@ -4085,7 +4347,7 @@ function copyChannelUrl(url) {
     });
 }
 
-function openChannelSettingsModal(channelId) {
+async function openChannelSettingsModal(channelId) {
     closeAllActionMenus();
     const channel = cachedSavedChannels.find(c => c.channel_id === channelId);
     if (!channel) {
@@ -4099,8 +4361,24 @@ function openChannelSettingsModal(channelId) {
     document.getElementById('modalChannelIdSub').textContent = `ID: ${channel.channel_id} • URL: ${channel.url || 'N/A'}`;
     document.getElementById('settingDisplayName').value = channel.display_name || channel.title || '';
     document.getElementById('settingCustomProxy').value = channel.custom_proxy || '';
-    document.getElementById('settingDownloadDir').value = channel.download_dir || '';
-    document.getElementById('settingRenderDir').value = channel.render_dir || '';
+
+    let defaultDl = 'data/downloads';
+    let defaultRd = 'data/rendered';
+    try {
+        const defRes = await fetch('/api/settings/defaults');
+        const defData = await defRes.json();
+        if (defData.download_dir) defaultDl = defData.download_dir;
+        if (defData.render_dir) defaultRd = defData.render_dir;
+    } catch (_) { }
+
+    const chDlInput = document.getElementById('settingDownloadDir');
+    const chRdInput = document.getElementById('settingRenderDir');
+    if (chDlInput) {
+        chDlInput.value = (channel.download_dir && isAbsolutePath(channel.download_dir)) ? channel.download_dir : defaultDl;
+    }
+    if (chRdInput) {
+        chRdInput.value = (channel.render_dir && isAbsolutePath(channel.render_dir)) ? channel.render_dir : defaultRd;
+    }
     document.getElementById('settingIsActive').checked = channel.is_active === 1;
     document.getElementById('settingAutoDownload').checked = channel.auto_download === 1;
     document.getElementById('settingAutoRender').checked = channel.auto_render === 1;
@@ -4130,6 +4408,30 @@ function openChannelSettingsModal(channelId) {
     // Load và gán cài đặt BGM cho kênh
     populateChannelBgmSelect(channel.bgm_folder || '', channel.bgm_volume != null ? channel.bgm_volume : 0.15);
 
+    // Load cài đặt giới hạn tải khi quét thủ công (Manual Scan Limit)
+    // Mặc định bằng scan_all_monitored_channels cap (max_videos_per_scan từ scheduler settings)
+    let defaultMaxManual = 5;
+    try {
+        const schedRes = await fetch('/api/scheduler/settings');
+        const schedData = await schedRes.json();
+        if (schedData && schedData.max_videos_per_scan) {
+            defaultMaxManual = schedData.max_videos_per_scan;
+        }
+    } catch (_) { }
+
+    const chMaxManualInput = document.getElementById('settingMaxManualVideos');
+    const chMaxManualBadge = document.getElementById('settingMaxManualVideosBadge');
+    const effectiveManualVal = (channel.max_manual_videos !== null && channel.max_manual_videos !== undefined && channel.max_manual_videos !== '')
+        ? channel.max_manual_videos
+        : defaultMaxManual;
+    if (chMaxManualInput) {
+        chMaxManualInput.value = effectiveManualVal;
+        chMaxManualInput.placeholder = defaultMaxManual;
+    }
+    if (chMaxManualBadge) {
+        chMaxManualBadge.textContent = `${effectiveManualVal} video/lần`;
+    }
+
     document.getElementById('channelSettingsModal').classList.add('active');
 }
 
@@ -4155,7 +4457,9 @@ function copyCurrentChannelUrl() {
 
 function scanCurrentChannelNow(btn) {
     if (activeModalChannel) {
-        scanSingleChannel(activeModalChannel.channel_id, btn);
+        const inputLimit = document.getElementById('settingMaxManualVideos');
+        const limitVal = inputLimit && inputLimit.value ? parseInt(inputLimit.value, 10) : null;
+        scanSingleChannel(activeModalChannel.channel_id, btn, limitVal);
     }
 }
 
@@ -4197,6 +4501,9 @@ async function saveChannelSettings(btn) {
         return;
     }
 
+    const maxManualRaw = (document.getElementById('settingMaxManualVideos')?.value || '').trim();
+    const maxManual = maxManualRaw !== '' && !isNaN(parseInt(maxManualRaw, 10)) ? Math.max(1, parseInt(maxManualRaw, 10)) : null;
+
     const payload = {
         channel_id: channelId,
         display_name: displayName,
@@ -4215,7 +4522,8 @@ async function saveChannelSettings(btn) {
         disable_subtitle_for_shorts: document.getElementById('settingChannelDisableSubtitleForShorts')?.checked ? 1 : 0,
         subtitle_enabled: document.getElementById('settingChannelSubtitleSwitch')?.checked ? 1 : 0,
         subtitle_style: document.getElementById('settingChannelSubtitleStyle')?.value || 'inherit',
-        subtitle_position: document.getElementById('settingChannelSubtitlePosition')?.value || 'inherit'
+        subtitle_position: document.getElementById('settingChannelSubtitlePosition')?.value || 'inherit',
+        max_manual_videos: maxManual
     };
 
     const origHtml = btn ? btn.innerHTML : '';
@@ -4253,6 +4561,7 @@ async function saveChannelSettings(btn) {
                 ch.subtitle_enabled = payload.subtitle_enabled;
                 ch.subtitle_style = payload.subtitle_style;
                 ch.subtitle_position = payload.subtitle_position;
+                ch.max_manual_videos = maxManual;
             }
             closeChannelSettingsModal();
             await loadSavedChannels();
@@ -4312,10 +4621,10 @@ async function clearChannelHistoryFromModal(btn) {
     const name = activeModalChannel.display_name || activeModalChannel.title;
 
     const ok = await showConfirmDialog({
-        title: 'Xóa Toàn Bộ Lịch Sử & Tệp Tin',
-        message: `Bạn có chắc muốn XÓA TOÀN BỘ lịch sử video đã tải và render của kênh "${name}"?`,
-        details: 'Thao tác này cũng sẽ xóa các tệp tin trên đĩa!',
-        confirmText: 'Xác Nhận Xóa',
+        title: 'Đặt Lại Lịch Sử Kênh (Reset)',
+        message: `Bạn có chắc muốn ĐẶT LẠI LỊCH SỬ video của kênh "${name}"?`,
+        details: 'Hệ thống sẽ xóa bộ nhớ chống trùng lặp và các file video cũ của kênh này, cho phép bạn quét và tải lại các video từ đầu.',
+        confirmText: 'Xác Nhận Đặt Lại',
         confirmClass: 'btn-danger'
     });
     if (!ok) return;
@@ -4357,10 +4666,10 @@ async function deleteChannelFromModal(btn) {
     const name = activeModalChannel.display_name || activeModalChannel.title;
 
     const ok = await showConfirmDialog({
-        title: 'Xóa Kênh Theo Dõi',
-        message: `Xác nhận xóa hoàn toàn kênh "${name}" khỏi cơ sở dữ liệu theo dõi?`,
-        details: 'Toàn bộ dữ liệu cấu hình theo dõi của kênh này sẽ bị loại bỏ.',
-        confirmText: 'Xóa Kênh',
+        title: 'Bỏ Lưu Kênh',
+        message: `Bạn có chắc chắn muốn bỏ theo dõi kênh "${name}"?`,
+        details: 'Kênh sẽ bị xóa khỏi danh sách giám sát và dừng tự động tải/render video mới.',
+        confirmText: 'Bỏ Lưu',
         confirmClass: 'btn-danger'
     });
     if (!ok) return;
@@ -4368,19 +4677,27 @@ async function deleteChannelFromModal(btn) {
     const origHtml = btn ? btn.innerHTML : '';
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang Bỏ Lưu...';
     }
 
     try {
-        const res = await fetch(`/api/youtube/channels/${cid}`, { method: 'DELETE' });
+        const res = await fetch(`/api/youtube/channels/${encodeURIComponent(cid)}`, { method: 'DELETE' });
         const data = await res.json();
         if (data.status === 'success') {
-            showToast(`Đã xóa kênh "${name}" thành công!`);
+            showToast(`Đã bỏ lưu kênh "${name}" thành công!`);
             closeChannelSettingsModal();
+            cachedSavedChannels = (cachedSavedChannels || []).filter(c => c.channel_id !== cid);
+            const raw = (rawYtChannels || []).find(c => c.channel_id === cid);
+            if (raw) raw.is_saved = false;
+            if (activeDetailChannel && activeDetailChannel.channel_id === cid) {
+                activeDetailChannel.is_saved = false;
+                updateDetailModalSaveBtn();
+            }
             loadSavedChannels();
+            renderYtChannelsTable();
             loadDashboardStats();
         } else {
-            showToast('Lỗi khi xóa kênh: ' + (data.message || 'Thất bại'), true);
+            showToast('Lỗi khi bỏ lưu kênh: ' + (data.message || 'Thất bại'), true);
         }
     } catch (err) {
         showToast('Lỗi kết nối: ' + err.message, true);
@@ -4426,10 +4743,50 @@ function applyCachedSchedulerState() {
     }
 }
 
+let cachedPipelineVideos = [];
+
+async function exportPipelineVideosCsv() {
+    if (!cachedPipelineVideos || !cachedPipelineVideos.length) {
+        try {
+            await loadPipelineStatus();
+        } catch (e) {
+            console.warn('Lỗi tải pipeline trước khi xuất CSV:', e);
+        }
+    }
+    if (!cachedPipelineVideos || !cachedPipelineVideos.length) {
+        showToast('Chưa có dữ liệu tác vụ video nào để xuất CSV!', true);
+        return;
+    }
+    const headers = [
+        'ID Video',
+        'Tiêu Đề Video',
+        'Kênh Nguồn',
+        'Channel ID',
+        'Thời Lượng (giây)',
+        'Trạng Thái Luồng',
+        'Thời Gian Tạo'
+    ];
+    const rows = [headers];
+    cachedPipelineVideos.forEach(v => {
+        rows.push([
+            v.id || '',
+            v.title || '',
+            v.channel_name || '',
+            v.channel_id || '',
+            v.duration ? Math.round(v.duration) : '',
+            v.status || '',
+            v.created_at || ''
+        ]);
+    });
+    const dateStr = new Date().toISOString().split('T')[0];
+    downloadCsv(`tien_trinh_pipeline_video_${dateStr}.csv`, rows);
+}
+
 async function loadPipelineStatus() {
     try {
         const res = await fetch('/api/pipeline/status');
         const data = await res.json();
+        cachedPipelineVideos = data.recent_pipeline || [];
 
         if (data.scheduler_running !== undefined) {
             try {
@@ -4516,6 +4873,7 @@ async function loadPipelineStatus() {
                         'downloaded': '<span class="badge badge-blue"><i class="fa-solid fa-cloud-arrow-down"></i> Đã tải gốc</span>',
                         'rendering': '<span class="badge badge-purple"><i class="fa-solid fa-spinner fa-spin"></i> Đang render AI</span>',
                         'rendered': '<span class="badge badge-gold"><i class="fa-solid fa-wand-magic-sparkles"></i> Đã render 9:16</span>',
+                        'queued': '<span class="badge badge-warning" style="color:#f59e0b; border:1px solid rgba(245,158,11,0.3); background:rgba(245,158,11,0.1);"><i class="fa-regular fa-clock"></i> Chờ đăng TikTok</span>',
                         'uploaded': '<span class="badge badge-success"><i class="fa-brands fa-tiktok"></i> Đã đăng TikTok</span>',
                         'error': '<span class="badge badge-danger"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>'
                     };
@@ -4835,7 +5193,7 @@ async function loadCampaigns() {
                         ${freqBadge}
                         ${warmupBadge}
                     </div>
-                    <div style="display:flex; gap:8px; align-items:center;">
+                    <div class="campaign-header-actions">
                         <button class="btn btn-sm btn-secondary has-tooltip" onclick="triggerDirectCampaignRun(${c.id}, '${escapeHtml(c.name).replace(/'/g, "\\'")}')" data-tooltip="Quét RSS & chạy thử biên tập AI cho chiến dịch này ngay">
                             <i class="fa-solid fa-bolt text-gold"></i> Chạy Thử
                         </button>
@@ -4859,10 +5217,10 @@ async function loadCampaigns() {
                     <div class="pipeline-node">
                         <div class="node-icon bg-blue"><i class="fa-brands fa-youtube" style="color:#ff0000;"></i></div>
                         <div class="node-text">
-                            <h5>${escapeHtml(chTitle)}</h5>
-                            <p>${chCount > 1 ? `Nhóm ${chCount} kênh lấy video tự động` : 'Quét RSS mỗi 15 phút'}</p>
+                            <h5 title="${escapeHtml(chTitle)}">${escapeHtml(chTitle)}</h5>
+                            <p title="${escapeHtml(chCount > 1 ? `Nhóm ${chCount} kênh lấy video tự động` : 'Quét RSS mỗi 15 phút')}">${chCount > 1 ? `Nhóm ${chCount} kênh lấy video tự động` : 'Quét RSS mỗi 15 phút'}</p>
                             <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-                                <span class="pipeline-dir-tag" title="Thư mục tải MP4 gốc"><i class="fa-regular fa-folder"></i> ${escapeHtml(dlDir)}</span>
+                                <span class="pipeline-dir-tag" title="Thư mục tải MP4 gốc: ${escapeHtml(dlDir)}"><i class="fa-regular fa-folder"></i> ${escapeHtml(dlDir)}</span>
                                 ${filterBadge}
                             </div>
                         </div>
@@ -4874,10 +5232,10 @@ async function loadCampaigns() {
                     <div class="pipeline-node">
                         <div class="node-icon bg-purple"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                         <div class="node-text">
-                            <h5>${escapeHtml(c.aspect_ratio === '9:16_blur' ? '9:16 Nền Mờ' : (c.preset_name || 'Chuẩn Beta 9:16'))}</h5>
-                            <p>${c.video_duration || 65}s Beta • Speed x${c.speed_factor} • ${c.flip_horizontal ? 'Lật hình' : 'Gốc'} • <strong>${c.clips_per_video || 3} clips/video</strong> • <span style="color:${c.add_part_label !== 0 ? 'var(--accent-cyan)' : 'var(--text-muted)'}; font-weight:600;">${c.add_part_label !== 0 ? 'Hiện Part' : 'Ẩn Part'}</span></p>
+                            <h5 title="${escapeHtml(c.aspect_ratio === '9:16_blur' ? '9:16 Nền Mờ' : (c.preset_name || 'Chuẩn Beta 9:16'))}">${escapeHtml(c.aspect_ratio === '9:16_blur' ? '9:16 Nền Mờ' : (c.preset_name || 'Chuẩn Beta 9:16'))}</h5>
+                            <p title="${c.video_duration || 65}s Beta • Speed x${c.speed_factor} • ${c.flip_horizontal ? 'Lật hình' : 'Gốc'} • ${c.clips_per_video || 3} clips/video • ${c.add_part_label !== 0 ? 'Hiện Part' : 'Ẩn Part'}">${c.video_duration || 65}s Beta • Speed x${c.speed_factor} • ${c.flip_horizontal ? 'Lật hình' : 'Gốc'} • <strong>${c.clips_per_video || 3} clips/video</strong> • <span style="color:${c.add_part_label !== 0 ? 'var(--accent-cyan)' : 'var(--text-muted)'}; font-weight:600;">${c.add_part_label !== 0 ? 'Hiện Part' : 'Ẩn Part'}</span></p>
                             <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:3px;">${subBadge}${bgmBadge}</div>
-                            <span class="pipeline-dir-tag" title="Thư mục lưu video 9:16"><i class="fa-solid fa-folder-open"></i> ${escapeHtml(rdDir)}</span>
+                            <span class="pipeline-dir-tag" title="Thư mục lưu video 9:16: ${escapeHtml(rdDir)}"><i class="fa-solid fa-folder-open"></i> ${escapeHtml(rdDir)}</span>
                         </div>
                     </div>
 
@@ -4887,9 +5245,9 @@ async function loadCampaigns() {
                     <div class="pipeline-node">
                         <div class="node-icon bg-gold"><i class="fa-brands fa-tiktok"></i></div>
                         <div class="node-text">
-                            <h5>${escapeHtml(gpmTitle)}</h5>
-                            <p>${freqText} • ${c.daily_limit} video/ngày</p>
-                            <span class="pipeline-dir-tag" style="color:var(--accent-gold);"><i class="fa-regular fa-clock"></i> Khung: ${escapeHtml(c.post_schedule || '11:30, 18:00, 20:30')}${c.random_delay_minutes ? ' (&plusmn;' + c.random_delay_minutes + 'p)' : ''}</span>
+                            <h5 title="${escapeHtml(gpmTitle)}">${escapeHtml(gpmTitle)}</h5>
+                            <p title="${escapeHtml(freqText)} • ${c.daily_limit} video/ngày">${freqText} • ${c.daily_limit} video/ngày</p>
+                            <span class="pipeline-dir-tag" style="color:var(--accent-gold);" title="Khung giờ: ${escapeHtml(c.post_schedule || '11:30, 18:00, 20:30')}${c.random_delay_minutes ? ' (±' + c.random_delay_minutes + 'p)' : ''}"><i class="fa-regular fa-clock"></i> Khung: ${escapeHtml(c.post_schedule || '11:30, 18:00, 20:30')}${c.random_delay_minutes ? ' (&plusmn;' + c.random_delay_minutes + 'p)' : ''}</span>
                             <span class="pipeline-dir-tag" style="color:#10b981; margin-top:2px;" title="Giãn cách an toàn tối thiểu giữa các lần đăng trên cùng 1 nick"><i class="fa-solid fa-hourglass-half"></i> Giãn cách: ${c.min_post_interval_minutes ? c.min_post_interval_minutes + 'p' : 'Toàn cục'}</span>
                         </div>
                     </div>
@@ -4985,6 +5343,7 @@ async function openNewCampaignModal() {
         const dlInput = document.getElementById('campaignDownloadDir');
         const rdInput = document.getElementById('campaignRenderDir');
         if (dlInput && defData.download_dir) dlInput.value = defData.download_dir;
+        if (rdInput && defData.render_dir) rdInput.value = defData.render_dir;
     } catch (_) { }
 
     // 4. Ensure BGM Categories loaded
@@ -5395,8 +5754,23 @@ async function openEditCampaignModal(id) {
         renderEditCampaignGpmCheckboxes(modalAllGpmProfiles, c.gpm_profile_ids_list || []);
 
         // Directories
-        document.getElementById('editCampaignDownloadDir').value = c.download_dir || 'data/downloads';
-        document.getElementById('editCampaignRenderDir').value = c.render_dir || 'data/rendered';
+        let defaultDl = 'data/downloads';
+        let defaultRd = 'data/rendered';
+        try {
+            const defRes = await fetch('/api/settings/defaults');
+            const defData = await defRes.json();
+            if (defData.download_dir) defaultDl = defData.download_dir;
+            if (defData.render_dir) defaultRd = defData.render_dir;
+        } catch (_) { }
+
+        const editDlInput = document.getElementById('editCampaignDownloadDir');
+        const editRdInput = document.getElementById('editCampaignRenderDir');
+        if (editDlInput) {
+            editDlInput.value = (c.download_dir && isAbsolutePath(c.download_dir)) ? c.download_dir : defaultDl;
+        }
+        if (editRdInput) {
+            editRdInput.value = (c.render_dir && isAbsolutePath(c.render_dir)) ? c.render_dir : defaultRd;
+        }
 
         // Edit Recipe
         const aspectSel = document.getElementById('editCampaignAspectRatio');
@@ -7412,7 +7786,14 @@ function resetAiFilters() {
     showToast('Đã đặt lại toàn bộ bộ lọc nhật ký AI!');
 }
 
-function exportAiUsageLogsCsv() {
+async function exportAiUsageLogsCsv() {
+    if (!cachedAiLogs || !cachedAiLogs.length) {
+        try {
+            await loadAiUsageDashboard();
+        } catch (e) {
+            console.warn('Lỗi tải nhật ký AI trước khi xuất CSV:', e);
+        }
+    }
     const list = getFilteredAiLogs();
     if (!list || !list.length) {
         showToast('Không có dữ liệu nhật ký AI để xuất CSV!', true);
@@ -8340,15 +8721,15 @@ async function testTelegramChannel(channelId, btn) {
     return testTelegramChannelMode(channelId, 'connection', btn);
 }
 
-function togglePasswordVisibility(inputId, triggerEl) {
+function togglePasswordVisibility(inputId, triggerEl, label = 'Token') {
     const input = document.getElementById(inputId);
     if (!input) return;
     if (input.type === 'password') {
         input.type = 'text';
-        if (triggerEl) triggerEl.innerHTML = '<i class="fa-solid fa-eye-slash"></i> Ẩn Token';
+        if (triggerEl) triggerEl.innerHTML = `<i class="fa-solid fa-eye-slash"></i> Ẩn ${label}`;
     } else {
         input.type = 'password';
-        if (triggerEl) triggerEl.innerHTML = '<i class="fa-solid fa-eye"></i> Hiện Token';
+        if (triggerEl) triggerEl.innerHTML = `<i class="fa-solid fa-eye"></i> Hiện ${label}`;
     }
 }
 
@@ -8501,6 +8882,84 @@ async function confirmClearFileLog() {
         }
     } catch (err) {
         showToast('Lỗi: ' + err.message, true);
+    }
+}
+
+async function downloadLogFile() {
+    try {
+        showToast('Đang tải dữ liệu file log hệ thống...');
+        const res = await fetch('/api/system/logs/download');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast('Lỗi tải file log: ' + (err.detail || 'Không tìm thấy file log trên hệ thống!'), true);
+            return;
+        }
+        const blob = await res.blob();
+        if (blob.size === 0) {
+            showToast('File log hiện tại đang trống!', true);
+            return;
+        }
+
+        const dateStr = new Date().toISOString().split('T')[0];
+        const defaultFilename = `tiktok_farm_debug_${dateStr}.log`;
+
+        // 1. Mở cửa sổ "Save As" (chọn thư mục lưu) của Windows tương tự chức năng Xuất CSV (Excel)
+        if (typeof window.showSaveFilePicker === 'function') {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: defaultFilename,
+                    types: [
+                        {
+                            description: 'Tệp Log Hệ Thống (*.log)',
+                            accept: { 'text/plain': ['.log'] }
+                        },
+                        {
+                            description: 'Tệp Văn Bản (*.txt)',
+                            accept: { 'text/plain': ['.txt'] }
+                        }
+                    ]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                showToast(`✅ Đã lưu file log thành công vào "${handle.name || defaultFilename}"!`);
+                return;
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    // Người dùng bấm Hủy (Cancel) trên hộp thoại chọn thư mục
+                    return;
+                }
+                console.warn('showSaveFilePicker không khả dụng hoặc bị từ chối:', err);
+            }
+        }
+
+        // 2. Dự phòng: Tự động tải xuống qua Blob URL
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.setAttribute('download', defaultFilename);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast(`✅ Đã tải file log thành công (${(blob.size / 1024).toFixed(1)} KB)!`);
+    } catch (err) {
+        console.error('Lỗi download log file:', err);
+        showToast('Lỗi khi tải file log: ' + err.message, true);
+    }
+}
+
+async function openLogFolder() {
+    try {
+        const res = await fetch('/api/system/logs/open-folder', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            showToast('📂 Đã mở thư mục chứa file log trên Windows Explorer!');
+        } else {
+            showToast('Không thể mở thư mục: ' + (data.detail || 'Lỗi không xác định'), true);
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối khi mở thư mục log: ' + err.message, true);
     }
 }
 

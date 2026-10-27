@@ -269,20 +269,20 @@
             <!-- TAB: YOUTUBE SOURCES UNIFIED -->
             <section id="tab-sources" class="tab-pane">
                 <div class="sources-subnav-tabs mb-4">
-                    <button type="button" class="subnav-tab-btn active" id="btnSubnavSaved"
-                        onclick="switchSourceSubTab('saved')">
-                        <i class="fa-solid fa-bookmark" style="color:var(--accent-blue);"></i> Kênh Đang Giám Sát (<span
-                            id="sourceSavedCountBadge">0</span>)
-                    </button>
-                    <button type="button" class="subnav-tab-btn" id="btnSubnavSearch"
+                    <button type="button" class="subnav-tab-btn active" id="btnSubnavSearch"
                         onclick="switchSourceSubTab('search')">
                         <i class="fa-solid fa-magnifying-glass" style="color:var(--accent-cyan);"></i> Quét & Tìm Kênh
                         Mới
                     </button>
+                    <button type="button" class="subnav-tab-btn" id="btnSubnavSaved"
+                        onclick="switchSourceSubTab('saved')">
+                        <i class="fa-solid fa-bookmark" style="color:var(--accent-blue);"></i> Kênh Đang Giám Sát (<span
+                            id="sourceSavedCountBadge">0</span>)
+                    </button>
                 </div>
 
-                <!-- Subview 2: Search Channels (Initially Hidden) -->
-                <div id="sourceSubViewSearch" style="display:none;">
+                <!-- Subview: Search Channels (Active by default) -->
+                <div id="sourceSubViewSearch" style="display:block;">
                     <div id="tab-youtube">
                         <div class="glass-panel">
                             <div class="panel-header">
@@ -626,8 +626,8 @@
                     </div> <!-- /#tab-youtube -->
                 </div> <!-- /#sourceSubViewSearch -->
 
-                <!-- Subview 1: Saved Channels (Active by default) -->
-                <div id="sourceSubViewSaved">
+                <!-- Subview: Saved Channels -->
+                <div id="sourceSubViewSaved" style="display:none;">
                     <div id="tab-saved-channels">
                         <!-- Saved Channels Stats Bar -->
                         <div class="stats-grid mb-4">
@@ -1794,6 +1794,10 @@
                         <div style="display:flex; gap:8px;">
                             <button class="btn btn-sm btn-primary" onclick="triggerProcessUploads()"><i
                                     class="fa-solid fa-paper-plane"></i> Đăng Ngay Hàng Đợi</button>
+                            <button class="btn btn-sm btn-secondary has-tooltip tooltip-top" onclick="exportPipelineVideosCsv()"
+                                data-tooltip="Xuất lịch sử tiến trình video ra file CSV">
+                                <i class="fa-solid fa-file-csv" style="color:var(--accent-cyan);"></i> Xuất CSV
+                            </button>
                             <button class="btn btn-sm btn-secondary" onclick="loadPipelineStatus()"><i
                                     class="fa-solid fa-rotate"></i> Cập Nhật</button>
                         </div>
@@ -2345,10 +2349,14 @@
                             <div id="fileLogActionButtons" style="display: inline-flex; gap: 8px; align-items: center;">
                                 <button class="btn btn-sm btn-secondary" onclick="loadFileLogs()"><i
                                         class="fa-solid fa-rotate"></i> Làm Mới</button>
-                                <a href="/api/system/logs/download" class="btn btn-sm btn-primary"
-                                    download="tiktok_farm_debug.log">
+                                <button class="btn btn-sm btn-primary has-tooltip" onclick="downloadLogFile()"
+                                    data-tooltip="Chọn thư mục và lưu file log (.log) ra máy tính">
                                     <i class="fa-solid fa-download"></i> Tải File Log (.log)
-                                </a>
+                                </button>
+                                <button class="btn btn-sm btn-secondary has-tooltip" onclick="openLogFolder()"
+                                    data-tooltip="Mở thư mục chứa file log trên Windows Explorer">
+                                    <i class="fa-regular fa-folder-open"></i> Mở Thư Mục Log
+                                </button>
                                 <button class="btn btn-sm btn-danger" onclick="confirmClearFileLog()"><i
                                         class="fa-solid fa-trash-can"></i> Xóa Log</button>
                             </div>
@@ -2458,7 +2466,8 @@
                             </div>
                         </div>
                         <div class="form-group mt-2">
-                            <textarea id="settingYoutubeKeys" class="input-field" rows="4" placeholder="AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&#10;AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY&#10;AIzaSyZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+                            <textarea id="settingYoutubeKeys" class="input-field" rows="4"
+                                placeholder="AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&#10;AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY&#10;AIzaSyZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
                                 style="font-family: monospace; font-size: 13px; resize: vertical;"></textarea>
                             <small class="form-hint"
                                 style="display: block; margin-top: 6px; margin-bottom: 14px; color: var(--text-muted); font-size: 12px; line-height: 1.5;">Mỗi
@@ -2495,8 +2504,16 @@
                         </div>
                         <div class="modal-form-grid mt-2">
                             <div class="form-group">
-                                <label><i class="fa-solid fa-bolt" style="color:#0070f3;"></i> DeepSeek API Key (Khuyên
-                                    dùng - Siêu rẻ):</label>
+                                <div
+                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <label style="font-weight:600; margin:0;"><i class="fa-solid fa-bolt"
+                                            style="color:#0070f3;"></i> DeepSeek API Key (Khuyên dùng - Siêu
+                                        rẻ):</label>
+                                    <span style="font-size:11.5px; color:var(--accent-blue); cursor:pointer;"
+                                        onclick="togglePasswordVisibility('settingDeepSeekKey', this, 'Key')">
+                                        <i class="fa-solid fa-eye"></i> Hiện Key
+                                    </span>
+                                </div>
                                 <input type="password" id="settingDeepSeekKey" class="input-field" placeholder="sk-..."
                                     autocomplete="off">
                             </div>
@@ -2511,7 +2528,15 @@
                             </div>
 
                             <div class="form-group">
-                                <label><i class="fa-solid fa-robot" style="color:#10b981;"></i> Gemini API Key:</label>
+                                <div
+                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <label style="font-weight:600; margin:0;"><i class="fa-solid fa-robot"
+                                            style="color:#10b981;"></i> Gemini API Key:</label>
+                                    <span style="font-size:11.5px; color:var(--accent-blue); cursor:pointer;"
+                                        onclick="togglePasswordVisibility('settingGeminiKey', this, 'Key')">
+                                        <i class="fa-solid fa-eye"></i> Hiện Key
+                                    </span>
+                                </div>
                                 <input type="password" id="settingGeminiKey" class="input-field" placeholder="AIzaSy..."
                                     autocomplete="off">
                             </div>
@@ -2526,7 +2551,15 @@
                             </div>
 
                             <div class="form-group">
-                                <label><i class="fa-solid fa-brain" style="color:#10a37f;"></i> OpenAI API Key:</label>
+                                <div
+                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <label style="font-weight:600; margin:0;"><i class="fa-solid fa-brain"
+                                            style="color:#10a37f;"></i> OpenAI API Key:</label>
+                                    <span style="font-size:11.5px; color:var(--accent-blue); cursor:pointer;"
+                                        onclick="togglePasswordVisibility('settingOpenAiKey', this, 'Key')">
+                                        <i class="fa-solid fa-eye"></i> Hiện Key
+                                    </span>
+                                </div>
                                 <input type="password" id="settingOpenAiKey" class="input-field" placeholder="sk-..."
                                     autocomplete="off">
                             </div>
@@ -3439,6 +3472,10 @@
                             class="btn btn-secondary btn-sm">
                             <i class="fa-brands fa-youtube text-danger"></i> Mở YouTube
                         </a>
+                        <button type="button" class="btn btn-secondary btn-sm has-tooltip tooltip-bottom" id="btnRefreshChannelStats"
+                            data-tooltip="Cập nhật số liệu mới nhất" title="Cập nhật số liệu mới nhất" onclick="refreshActiveChannelStats(this)">
+                            <i class="fa-solid fa-arrows-rotate text-cyan"></i> Cập nhật kênh
+                        </button>
                         <button type="button" class="btn btn-primary btn-sm" id="btnToggleSaveFromDetail">
                             <i class="fa-solid fa-bookmark"></i> <span id="detailSaveBtnText">Lưu Kênh</span>
                         </button>
@@ -3601,6 +3638,10 @@
                         onclick="scanCurrentChannelNow(this)">
                         <i class="fa-solid fa-bolt"></i> Quét Kênh Này Ngay
                     </button>
+                    <button type="button" class="btn btn-sm btn-danger" id="btnModalUnsaveChannel"
+                        onclick="deleteChannelFromModal(this)" title="Bỏ lưu kênh khỏi danh sách theo dõi">
+                        <i class="fa-solid fa-trash-can"></i> Bỏ lưu
+                    </button>
                 </div>
 
                 <div class="modal-form-grid">
@@ -3647,6 +3688,22 @@
                             </button>
                         </div>
                         <small class="form-hint">Đường dẫn thư mục lưu video đã render chuẩn hóa.</small>
+                    </div>
+
+                    <div class="form-group full-width" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); padding:12px 14px; border-radius:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <label style="font-weight:700; font-size:13px; margin:0;"><i class="fa-solid fa-cloud-arrow-down text-primary"></i> Giới Hạn Video Tải Khi Quét Thủ Công (Manual Scan Limit):</label>
+                            <span id="settingMaxManualVideosBadge" class="badge badge-primary" style="font-size:12px; font-weight:700;">5 video/lần</span>
+                        </div>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <input type="number" id="settingMaxManualVideos" class="input-field" min="1" max="50"
+                                value="5" placeholder="5" style="width:130px; font-weight:700; font-size:15px; color:#ef4444; text-align:center;"
+                                oninput="const b = document.getElementById('settingMaxManualVideosBadge'); if(b) b.textContent = (this.value ? this.value : '5') + ' video/lần';">
+                            <span style="font-size:13px; color:var(--text-muted); font-weight:600;">video tối đa / lần quét</span>
+                        </div>
+                        <small class="form-hint" style="margin-top:6px; margin-bottom:0;">
+                            Áp dụng riêng cho các lần quét thủ công (nút <strong>"Quét Kênh Này Ngay"</strong>). Mặc định bằng giới hạn chu kỳ tự động (5 video) trừ khi bạn chỉnh sửa/cập nhật. Khi chạy trong Chiến Dịch (Campaign), hệ thống vẫn giữ nguyên giới hạn toàn cục.
+                        </small>
                     </div>
 
                     <div class="form-group full-width">
@@ -3826,11 +3883,19 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeChannelSettingsModal()">Hủy</button>
-                <button class="btn btn-primary" id="btnSaveChannelSettings" onclick="saveChannelSettings(this)">
-                    <i class="fa-solid fa-floppy-disk"></i> Lưu Cài Đặt
+            <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+                <button type="button" class="btn btn-outline-danger btn-sm has-tooltip tooltip-top-right" id="btnModalClearHistory"
+                    onclick="clearChannelHistoryFromModal(this)"
+                    data-tooltip="Xóa bộ nhớ chống trùng lặp & file cũ để quét tải lại kênh này từ đầu"
+                    title="Xóa bộ nhớ chống trùng lặp & file cũ để quét tải lại kênh này từ đầu">
+                    <i class="fa-solid fa-rotate-left"></i> Đặt Lại Lịch Sử Kênh
                 </button>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" onclick="closeChannelSettingsModal()">Hủy</button>
+                    <button class="btn btn-primary" id="btnSaveChannelSettings" onclick="saveChannelSettings(this)">
+                        <i class="fa-solid fa-floppy-disk"></i> Lưu Cài Đặt
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -3992,7 +4057,7 @@
                                         (MP4):</label>
                                     <div style="display:flex; gap:6px; align-items:center;" class="mt-1">
                                         <input type="text" id="campaignDownloadDir" class="input-field"
-                                            placeholder="data/downloads" value="data/downloads" style="flex:1;">
+                                            placeholder="data/downloads" style="flex:1;">
                                         <button type="button" class="btn btn-secondary btn-sm"
                                             onclick="browseFolderForInput('campaignDownloadDir')"
                                             data-tooltip="Chọn thư mục trên máy tính"
@@ -4009,7 +4074,7 @@
                                         9:16:</label>
                                     <div style="display:flex; gap:6px; align-items:center;" class="mt-1">
                                         <input type="text" id="campaignRenderDir" class="input-field"
-                                            placeholder="data/rendered" value="data/rendered" style="flex:1;">
+                                            placeholder="data/rendered" style="flex:1;">
                                         <button type="button" class="btn btn-secondary btn-sm"
                                             onclick="browseFolderForInput('campaignRenderDir')"
                                             data-tooltip="Chọn thư mục trên máy tính"
@@ -5719,7 +5784,12 @@
             <div class="modal-footer"
                 style="padding: 12px 20px; display:flex; justify-content:space-between; align-items:center; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink:0;">
                 <span style="font-size:12px; color:var(--text-muted);" id="modalChannelVideosStats">0 Video</span>
-                <button type="button" class="btn btn-secondary" onclick="closeChannelVideosModal()">Đóng</button>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button type="button" class="btn btn-sm btn-secondary has-tooltip tooltip-top" onclick="exportCurrentChannelVideosCsv()" data-tooltip="Xuất danh sách video của kênh ra file CSV">
+                        <i class="fa-solid fa-file-csv" style="color:var(--accent-cyan);"></i> Xuất CSV
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeChannelVideosModal()">Đóng</button>
+                </div>
             </div>
         </div>
     </div>

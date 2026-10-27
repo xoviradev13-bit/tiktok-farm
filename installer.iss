@@ -34,6 +34,9 @@ VersionInfoDescription={#MyAppName} Setup
 VersionInfoTextVersion=1.0.0.0
 VersionInfoCopyright=Copyright (C) 2026 {#MyAppPublisher}
 DisableProgramGroupPage=auto
+CloseApplications=yes
+CloseApplicationsFilter=*{#MyAppExeName}*
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -47,15 +50,27 @@ Source: "logo\*"; DestDir: "{app}\logo"; Flags: ignoreversion recursesubdirs cre
 
 
 [Dirs]
-Name: "{app}\data"
-Name: "{app}\data\downloads"
-Name: "{app}\data\rendered"
-Name: "{app}\data\logs"
+; Tạo thư mục dữ liệu trong %APPDATA% (không bị xóa khi gỡ cài đặt)
+Name: "{userappdata}\TikTok Auto Farm"
+Name: "{userappdata}\TikTok Auto Farm\downloads"
+Name: "{userappdata}\TikTok Auto Farm\rendered"
+Name: "{userappdata}\TikTok Auto Farm\logs"
+Name: "{userappdata}\TikTok Auto Farm\music"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\logo\app-logo.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\logo\app-logo.ico"; Tasks: desktopicon
 
+[UninstallDelete]
+; Xóa sạch các file phát sinh khi chạy (như .env, cache) và thư mục cài đặt khi gỡ bỏ
+Type: filesandordirs; Name: "{app}"
+
+[UninstallRun]
+; Tắt ứng dụng chạy ngầm trên khay hệ thống (system tray) trước khi gỡ cài đặt
+Filename: "{cmd}"; Parameters: "/C taskkill /F /IM {#MyAppExeName} /T >nul 2>&1"; Flags: runhidden
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+

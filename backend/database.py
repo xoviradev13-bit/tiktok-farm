@@ -56,6 +56,7 @@ def init_db():
         "subtitle_enabled": "INTEGER DEFAULT NULL",
         "subtitle_style": "TEXT DEFAULT ''",
         "subtitle_position": "TEXT DEFAULT ''",
+        "max_manual_videos": "INTEGER DEFAULT NULL",
     }
     for col, col_type in new_cols.items():
         if col not in existing_cols:
@@ -89,6 +90,29 @@ def init_db():
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+
+    # Bảng Lịch sử tải video vĩnh viễn (Chống tải trùng lặp ngay cả khi đã xóa file MP4 trên máy tính)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS download_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        yt_video_id TEXT UNIQUE,
+        channel_id TEXT,
+        title TEXT,
+        downloaded_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_dl_hist_vid ON download_history(yt_video_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_dl_hist_cid ON download_history(channel_id)")
+
+    # Tự động đồng bộ các video đã có từ bảng videos vào download_history
+    try:
+        cursor.execute('''
+            INSERT OR IGNORE INTO download_history (yt_video_id, channel_id, title, downloaded_at)
+            SELECT yt_video_id, channel_id, title, created_at FROM videos 
+            WHERE yt_video_id IS NOT NULL AND yt_video_id != ''
+        ''')
+    except Exception:
+        pass
 
     # Bảng Profile GPMLogin và chỉ số TikTok
     cursor.execute('''

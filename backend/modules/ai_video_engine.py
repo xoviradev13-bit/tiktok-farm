@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import json
 import unicodedata
@@ -288,7 +289,8 @@ class AIVideoEngine:
 
         try:
             logger.debug(f"Thực thi lệnh FFmpeg render: {' '.join(cmd[:12])}...")
-            process = subprocess.run(cmd, capture_output=True, timeout=600)
+            cflags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+            process = subprocess.run(cmd, capture_output=True, timeout=900, creationflags=cflags)
             stderr_text = process.stderr.decode("utf-8", errors="replace") if process.stderr else ""
             stdout_text = process.stdout.decode("utf-8", errors="replace") if process.stdout else ""
 
@@ -326,7 +328,7 @@ class AIVideoEngine:
                     "-map_metadata", "-1", "-movflags", "+faststart",
                     output_file
                 ])
-                process = subprocess.run(fallback_cmd, capture_output=True, timeout=600)
+                process = subprocess.run(fallback_cmd, capture_output=True, timeout=900, creationflags=cflags)
                 stderr_text = process.stderr.decode("utf-8", errors="replace") if process.stderr else ""
 
             if process.returncode == 0 and os.path.exists(output_file):

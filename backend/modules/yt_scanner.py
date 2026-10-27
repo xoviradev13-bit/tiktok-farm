@@ -1281,5 +1281,88 @@ class YouTubeScanner:
         log_event("INFO", f"Hoàn thành phân tích {len(results)} kênh cho từ khóa '{keyword}'")
         return results
 
+    def refresh_channel_stats(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Làm mới toàn bộ chỉ số (subscribers, views, upload cadence, tags, videos gần đây)
+        của 1 kênh YouTube và cập nhật vào CSDL.
+        """
+        cid = (channel_id or "").strip()
+        if not cid:
+            return None
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM channels WHERE channel_id = ?", (cid,))
+        row = cursor.fetchone()
+        conn.close()
+
+        existing = dict(row) if row else {}
+        ch_url = existing.get("url") or f"https://www.youtube.com/channel/{cid}"
+
+        basic_info: Dict[str, Any] = {
+            "channel_id": cid,
+            "title": existing.get("title", ""),
+            "url": ch_url,
+            "sample_view_count": existing.get("avg_views", 0),
+            "subscriber_count_scraped": existing.get("subscriber_count", 0),
+            "hit_count": 1,
+            "rank": 0,
+        }
+
+        # 1. Lấy stats chính thức qua YouTube Data API v3 (nếu có key trong pool)
+        try:
+            api_stats = self._fetch_stats_api([cid])
+            if cid in api_stats:
+                basic_info["api_stats"] = api_stats[cid]
+        except Exception as e:
+            log_event("WARNING", f"Lỗi fetch API stats cho {cid}: {e}")
+
+        # 2. Phân tích cadence qua RSS & fallback
+        analyzed = self.analyze_channel_cadence(ch_url, basic_info)
+        if not analyzed:
+            return None
+
+        # Giữ nguyên cấu hình mà người dùng đã thiết lập cho kênh
+        if existing:
+            for keep_col in (
+                "is_active", "auto_download", "display_name", "custom_proxy",
+                "download_dir", "render_dir", "auto_render", "bgm_folder",
+                "bgm_volume", "min_video_duration", "max_video_duration",
+                "include_shorts", "include_longform", "disable_subtitle_for_shorts",
+                "subtitle_enabled", "subtitle_style", "subtitle_position"
+            ):
+                if existing.get(keep_col) is not None:
+                    analyzed[keep_col] = existing[keep_col]
+
+        # 3. Lưu dữ liệu đã cập nhật vào SQLite + lưu channel_history
+        self.save_channels_to_db([analyzed])
+
+        # 4. Trả về channel dictionary đã đồng bộ từ database
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT c.*, 
+                (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id) as downloaded_count,
+                (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id AND v.status = 'rendered') as rendered_count
+            FROM channels c 
+            WHERE c.channel_id = ?
+        ''', (cid,))
+        updated_row = cursor.fetchone()
+        conn.close()
+
+        if updated_row:
+            ch_res = dict(updated_row)
+            for field in ["keywords", "topic_categories", "recent_video_titles"]:
+                if isinstance(ch_res.get(field), str):
+                    try:
+                        ch_res[field] = json.loads(ch_res[field])
+                    except Exception:
+                        ch_res[field] = []
+            ch_res["is_saved"] = True
+            log_event("INFO", f"Đã làm mới chỉ số kênh '{ch_res.get('title', cid)}' thành công.")
+            return ch_res
+
+        return analyzed
+
 
 yt_scanner = YouTubeScanner()

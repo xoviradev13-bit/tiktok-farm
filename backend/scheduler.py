@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 from datetime import datetime, timedelta
@@ -496,6 +497,9 @@ class BackgroundScheduler:
 
 
     def _process_pending_uploads(self):
+        if not self.is_running:
+            return
+
         conn = get_connection()
         cursor = conn.cursor()
         now_dt = datetime.now()
@@ -583,12 +587,25 @@ class BackgroundScheduler:
             break
 
         if task:
+            if not self.is_running:
+                conn.close()
+                return
+
             task_id = task["id"]
             video_path = task["rendered_path"]
             gpm_id = task["gpm_id"]
             title = task["title"]
             tags = task["tags"]
             cur_retries = task["retry_count"]
+
+            # Chốt chặn kiểm tra file video render thực tế trên đĩa (tránh mở GPM vô ích nếu file hỏng/rỗng)
+            if not video_path or not os.path.exists(video_path) or os.path.getsize(video_path) < 1024:
+                err_text = f"File video không tồn tại hoặc bị lỗi rỗng (<1KB): {video_path}"
+                log_event("ERROR", f"[UPLOAD WORKER] Hủy Task #{task_id}: {err_text}")
+                cursor.execute("UPDATE upload_tasks SET status = 'failed', error_message = ? WHERE id = ?", (err_text, task_id))
+                conn.commit()
+                conn.close()
+                return
 
             # Kiểm tra an toàn: Nếu profile đang bận quét follower thì tạm hoãn để không gây xung đột browser
             from backend.modules.tiktok_tracker import is_profile_busy
@@ -633,6 +650,8 @@ class BackgroundScheduler:
                         error_message = NULL 
                     WHERE id = ?
                 """, (now_str, task_id))
+                if cand.get("video_id"):
+                    cursor.execute("UPDATE videos SET status = 'uploaded' WHERE id = ?", (cand["video_id"],))
                 conn.commit()
                 try:
                     cursor.execute("SELECT value FROM settings WHERE key = 'cleanup_retention_mode'")

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.config import (
     BASE_DIR, FRONTEND_DIR, LOGO_DIR, SERVER_HOST, SERVER_PORT, save_env_config,
     YOUTUBE_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GEMINI_API_KEY, OPENAI_API_KEY, GPM_API_BASE_URL,
-    MUSIC_DIR
+    MUSIC_DIR, DOWNLOADS_DIR, RENDERED_DIR
 )
 from backend.database import get_connection, log_event, log_campaign_event
 from backend.modules.gpm_client import gpm_client
@@ -248,6 +248,7 @@ class UpdateChannelSettingsRequest(BaseModel):
     subtitle_enabled: Optional[int] = None
     subtitle_style: Optional[str] = "inherit"
     subtitle_position: Optional[str] = "inherit"
+    max_manual_videos: Optional[int] = None
 
 class ToggleChannelStatusRequest(BaseModel):
     channel_id: str
@@ -259,6 +260,10 @@ class ClearChannelHistoryRequest(BaseModel):
     target: Optional[str] = "all"  # "all", "downloaded", "rendered"
 
 class ScanChannelRequest(BaseModel):
+    channel_id: str
+    max_videos: Optional[int] = None
+
+class RefreshChannelStatsRequest(BaseModel):
     channel_id: str
 
 class SaveApiKeysRequest(BaseModel):
@@ -652,10 +657,13 @@ def search_youtube_channels(req: SearchKeywordRequest):
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT channel_id FROM channels")
-        saved_ids = {row[0] for row in cursor.fetchall()}
+        saved_ids_raw = [row[0] for row in cursor.fetchall() if row[0]]
+        saved_ids_set = set(saved_ids_raw)
+        saved_ids_lower = {x.strip().lower() for x in saved_ids_raw}
         conn.close()
         for ch in results:
-            ch["is_saved"] = ch.get("channel_id") in saved_ids
+            cid = (ch.get("channel_id") or "").strip()
+            ch["is_saved"] = (cid in saved_ids_set) or (cid.lower() in saved_ids_lower)
     except Exception:
         for ch in results:
             ch["is_saved"] = False
@@ -702,6 +710,12 @@ def list_saved_channels():
     ''')
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
+    for r in rows:
+        r["is_saved"] = True
+        if not r.get("download_dir") or r.get("download_dir") == "data/downloads":
+            r["download_dir"] = str(DOWNLOADS_DIR)
+        if not r.get("render_dir") or r.get("render_dir") == "data/rendered":
+            r["render_dir"] = str(RENDERED_DIR)
     return rows
 
 @app.get("/api/youtube/channels/{channel_id}")
@@ -713,7 +727,7 @@ def get_channel_detail(channel_id: str):
             (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id) as downloaded_count,
             (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id AND v.status = 'rendered') as rendered_count
         FROM channels c 
-        WHERE c.channel_id = ?
+        WHERE c.channel_id = ? COLLATE NOCASE
     ''', (channel_id,))
     row = cursor.fetchone()
     conn.close()
@@ -726,6 +740,10 @@ def get_channel_detail(channel_id: str):
                 except Exception:
                     ch[field] = []
         ch["is_saved"] = True
+        if not ch.get("download_dir") or ch.get("download_dir") == "data/downloads":
+            ch["download_dir"] = str(DOWNLOADS_DIR)
+        if not ch.get("render_dir") or ch.get("render_dir") == "data/rendered":
+            ch["render_dir"] = str(RENDERED_DIR)
         return ch
 
     # Check scanner cache if not in saved channels table
@@ -769,7 +787,8 @@ def update_channel_settings(req: UpdateChannelSettingsRequest):
             disable_subtitle_for_shorts = ?,
             subtitle_enabled = ?,
             subtitle_style = ?,
-            subtitle_position = ?
+            subtitle_position = ?,
+            max_manual_videos = ?
         WHERE channel_id = ?
     ''', (
         req.display_name or '',
@@ -789,6 +808,7 @@ def update_channel_settings(req: UpdateChannelSettingsRequest):
         req.subtitle_enabled,
         req.subtitle_style or '',
         req.subtitle_position or '',
+        req.max_manual_videos,
         req.channel_id
     ))
     conn.commit()
@@ -880,6 +900,7 @@ def clear_channel_history(req: ClearChannelHistoryRequest):
                         pass
 
         cursor.execute("DELETE FROM videos WHERE channel_id = ?", (req.channel_id,))
+        cursor.execute("DELETE FROM download_history WHERE channel_id = ?", (req.channel_id,))
         deleted_count = cursor.rowcount
         log_msg = f"Đã xóa lịch sử {deleted_count} video ({files_deleted} files) của kênh {req.channel_id}"
 
@@ -890,8 +911,24 @@ def clear_channel_history(req: ClearChannelHistoryRequest):
 
 @app.post("/api/youtube/channels/scan-now")
 def scan_channel_now(req: ScanChannelRequest):
-    result = yt_monitor.scan_single_channel(req.channel_id)
+    result = yt_monitor.scan_single_channel(req.channel_id, max_videos=req.max_videos)
     return result
+
+@app.post("/api/youtube/channels/refresh-stats")
+def refresh_channel_stats_endpoint(req: RefreshChannelStatsRequest):
+    cid = (req.channel_id or "").strip()
+    if not cid:
+        raise HTTPException(status_code=400, detail="Mã Channel ID không hợp lệ!")
+    
+    updated = yt_scanner.refresh_channel_stats(cid)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Không thể làm mới chỉ số kênh qua YouTube API/RSS!")
+    
+    return {
+        "status": "success",
+        "message": f"Đã cập nhật chỉ số kênh '{updated.get('title', cid)}' thành công!",
+        "channel": updated
+    }
 
 @app.get("/api/channels/{channel_id}/videos")
 def get_channel_videos(channel_id: str):
@@ -981,7 +1018,13 @@ def get_pipeline_status():
     active_campaigns = cursor.fetchone()[0]
 
     cursor.execute('''
-        SELECT v.id, v.title, v.duration, v.status, v.created_at, v.channel_id,
+        SELECT v.id, v.title, v.duration,
+               CASE 
+                   WHEN EXISTS (SELECT 1 FROM upload_tasks ut WHERE ut.video_id = v.id AND ut.status = 'completed') THEN 'uploaded'
+                   WHEN EXISTS (SELECT 1 FROM upload_tasks ut WHERE ut.video_id = v.id AND ut.status IN ('queued', 'processing')) THEN 'queued'
+                   ELSE v.status
+               END as status,
+               v.created_at, v.channel_id,
                COALESCE(c.display_name, c.title, 'Kênh ngoài') as channel_name
         FROM videos v
         LEFT JOIN channels c ON v.channel_id = c.channel_id
@@ -1320,6 +1363,10 @@ def list_campaigns():
             gpm_list = [r["gpm_profile_id"]]
         r["gpm_profile_ids_list"] = gpm_list
         r["gpm_count"] = len(gpm_list)
+        if not r.get("download_dir") or r.get("download_dir") == "data/downloads":
+            r["download_dir"] = str(DOWNLOADS_DIR)
+        if not r.get("render_dir") or r.get("render_dir") == "data/rendered":
+            r["render_dir"] = str(RENDERED_DIR)
     return rows
 
 def sanitize_campaign_schedule(raw_str: str) -> str:
@@ -1474,6 +1521,10 @@ def get_campaign(campaign_id: int):
     elif r.get("gpm_profile_id"):
         gpm_list = [r["gpm_profile_id"]]
     r["gpm_profile_ids_list"] = gpm_list
+    if not r.get("download_dir") or r.get("download_dir") == "data/downloads":
+        r["download_dir"] = str(DOWNLOADS_DIR)
+    if not r.get("render_dir") or r.get("render_dir") == "data/rendered":
+        r["render_dir"] = str(RENDERED_DIR)
     return r
 
 @app.put("/api/campaigns/{campaign_id}")
@@ -1872,6 +1923,16 @@ def sync_local_videos_with_db():
         has_raw = bool(r.get("download_path") and os.path.exists(r["download_path"]))
         has_ren = bool(r.get("rendered_path") and os.path.exists(r["rendered_path"]))
         vid_id = r.get("yt_video_id") or ""
+
+        # Luôn đảm bảo yt_video_id được ghi nhận vào download_history vĩnh viễn (chống tải trùng khi xóa file)
+        if vid_id:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO download_history (yt_video_id, channel_id, title)
+                    VALUES (?, ?, ?)
+                """, (vid_id, r.get("channel_id") or "", r.get("title") or ""))
+            except Exception:
+                pass
 
         # Kiểm tra thêm part renders
         any_parts = False
@@ -3248,8 +3309,8 @@ def get_default_settings():
     settings_dict = dict(cursor.fetchall())
     conn.close()
     return {
-        "download_dir": settings_dict.get("default_download_dir", "data/downloads"),
-        "render_dir": settings_dict.get("default_render_dir", "data/rendered"),
+        "download_dir": settings_dict.get("default_download_dir", str(DOWNLOADS_DIR)),
+        "render_dir": settings_dict.get("default_render_dir", str(RENDERED_DIR)),
         "scheduler_running": settings_dict.get("scheduler_running", "1") == "1",
         "scheduler_interval_minutes": int(settings_dict.get("scheduler_interval_minutes", getattr(scheduler, "rss_interval_minutes", 15))),
         "upload_interval_seconds": int(settings_dict.get("upload_interval_seconds", getattr(scheduler, "upload_interval_seconds", 60))),
@@ -3457,6 +3518,21 @@ def clear_system_logs():
     """Làm sạch file log trên đĩa"""
     ok = clear_log_file()
     return {"status": "success" if ok else "error"}
+
+@app.post("/api/system/logs/open-folder")
+def open_log_folder():
+    """Mở thư mục chứa file log trên Windows Explorer"""
+    import sys, subprocess
+    folder = LOG_FILE_PATH.parent
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(folder))
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])
+        return {"status": "success", "folder": str(folder)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Không thể mở thư mục log: {str(e)}")
 
 @app.on_event("startup")
 def on_startup():

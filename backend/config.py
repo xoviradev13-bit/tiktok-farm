@@ -15,21 +15,22 @@ if sys.platform == "win32":
         pass
 
 # Thư mục gốc dự án (Tự động nhận diện khi đóng gói PyInstaller .exe hoặc chạy mã nguồn)
+# DATA_DIR trỏ về %APPDATA% khi chạy .exe → dữ liệu không bị xoá khi uninstall/nâng cấp
 if getattr(sys, "frozen", False):
-    # Khi chạy từ file exe đóng gói
     BASE_DIR = Path(sys.executable).resolve().parent
     BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+    _appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
+    DATA_DIR = Path(_appdata) / "TikTok Auto Farm"
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent
     BUNDLE_DIR = BASE_DIR
+    DATA_DIR = BASE_DIR / "data"
 
 # Thư mục frontend và logo
 FRONTEND_DIR = BUNDLE_DIR / "frontend" if (BUNDLE_DIR / "frontend").exists() else BASE_DIR / "frontend"
 LOGO_DIR = BUNDLE_DIR / "logo" if (BUNDLE_DIR / "logo").exists() else BASE_DIR / "logo"
 APP_ICON_PATH = LOGO_DIR / "app-logo.ico"
 
-# Các thư mục lưu trữ dữ liệu (luôn nằm ở BASE_DIR nơi người dùng cài đặt)
-DATA_DIR = BASE_DIR / "data"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 RENDERED_DIR = DATA_DIR / "rendered"
 LOGS_DIR = DATA_DIR / "logs"

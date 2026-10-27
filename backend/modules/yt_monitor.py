@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import urllib.request
@@ -95,6 +96,20 @@ class YouTubeRSSMonitor:
         3. Nếu không thuộc Campaign nhưng kênh bật auto_render:
            - Render theo thiết lập mặc định của kênh
         """
+        if not force_campaign_id:
+            try:
+                from backend.scheduler import scheduler
+                if not scheduler.is_running:
+                    log_event("INFO", f"[RSS WORKER] Đã hủy bước render video '{video_title}' do Background Scheduler đã tạm dừng.")
+                    return
+            except Exception:
+                pass
+
+        # Chốt chặn kiểm tra file MP4 đầu vào phải tồn tại và không bị rỗng/hỏng
+        if not file_path or not os.path.exists(file_path) or os.path.getsize(file_path) < 1024:
+            log_event("WARNING", f"Bỏ qua render video {video_id} vì file MP4 đầu vào không tồn tại hoặc bị lỗi (<1KB): '{file_path}'")
+            return
+
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM videos WHERE yt_video_id = ?", (video_id,))
@@ -155,7 +170,13 @@ class YouTubeRSSMonitor:
                         disable_subtitle_for_shorts=sub_settings["disable_subtitle_for_shorts"]
                     )
                     if res.get("status") == "success" and video_db_id:
-                        rendered_files = res.get("rendered_files") or ([res.get("rendered_file")] if res.get("rendered_file") else [])
+                        raw_rendered_files = res.get("rendered_files") or ([res.get("rendered_file")] if res.get("rendered_file") else [])
+                        # Chốt chặn kiểm tra file render thực tế tồn tại và dung lượng > 1KB
+                        rendered_files = [f for f in raw_rendered_files if f and os.path.exists(f) and os.path.getsize(f) > 1024]
+                        if not rendered_files:
+                            log_campaign_event(cid, "ERROR", "render", f"Hủy lên lịch upload: Toàn bộ file render bị lỗi hoặc rỗng (<1KB) cho video {video_id}.")
+                            continue
+
                         log_campaign_event(cid, "SUCCESS", "render", f"Render Smart AI thành công video {video_id} ({len(rendered_files)} clip) -> {rendered_files[0] if rendered_files else ''}")
                         
                         assigned_profile_id = None
@@ -427,7 +448,46 @@ class YouTubeRSSMonitor:
 
         return eff_min, eff_max, eff_shorts, eff_longform
 
-    def scan_single_channel(self, channel_id: str, force_campaign_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_default_scan_cap(self) -> int:
+        """Lấy giới hạn số video tải mỗi kênh của chu kỳ tự động (scan_all_monitored_channels cap)"""
+        try:
+            from backend.scheduler import scheduler
+            if hasattr(scheduler, "max_videos_per_scan") and scheduler.max_videos_per_scan:
+                return int(scheduler.max_videos_per_scan)
+        except Exception:
+            pass
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = 'max_videos_per_scan'")
+            row = cursor.fetchone()
+            conn.close()
+            if row and row["value"]:
+                return max(1, int(row["value"]))
+        except Exception:
+            pass
+        return 5
+
+    def is_video_already_downloaded(self, yt_video_id: str) -> bool:
+        """Kiểm tra video đã từng được tải về hay chưa (kiểm tra cả download_history vĩnh viễn và videos)"""
+        if not yt_video_id:
+            return False
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM download_history WHERE yt_video_id = ?
+                UNION
+                SELECT 1 FROM videos WHERE yt_video_id = ?
+                LIMIT 1
+            """, (yt_video_id, yt_video_id))
+            row = cursor.fetchone()
+            conn.close()
+            return row is not None
+        except Exception:
+            return False
+
+    def scan_single_channel(self, channel_id: str, force_campaign_id: Optional[int] = None, max_videos: Optional[int] = None) -> Dict[str, Any]:
         """Quét ngay lập tức 1 kênh cụ thể và tải video mới nếu có"""
         conn = get_connection()
         cursor = conn.cursor()
@@ -449,15 +509,29 @@ class YouTubeRSSMonitor:
         ch_name = ch.get('display_name') or ch.get('title') or ""
         min_dur, max_dur, inc_shorts, inc_longform = self.get_effective_duration_limits(channel_id, force_campaign_id)
 
-        for v in videos:
-            vid = v["video_id"]
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM videos WHERE yt_video_id = ?", (vid,))
-            exists = cursor.fetchone()
-            conn.close()
+        # Xác định giới hạn số video tối đa tải về:
+        # 1. Ưu tiên tham số max_videos được truyền trực tiếp
+        # 2. Khi chạy từ Chiến Dịch (force_campaign_id): dùng giới hạn scan_all_monitored_channels cap (mặc định 5)
+        # 3. Quét thủ công (Manual scan): dùng max_manual_videos của kênh nếu đã lưu, nếu chưa thì mặc định bằng scan_all_monitored_channels cap
+        effective_cap = None
+        if max_videos is not None and int(max_videos) > 0:
+            effective_cap = int(max_videos)
+        elif force_campaign_id is not None:
+            effective_cap = self.get_default_scan_cap()
+        else:
+            ch_manual_cap = ch.get("max_manual_videos")
+            if ch_manual_cap is not None and str(ch_manual_cap).isdigit() and int(ch_manual_cap) > 0:
+                effective_cap = int(ch_manual_cap)
+            else:
+                effective_cap = self.get_default_scan_cap()
 
-            if not exists:
+        for v in videos:
+            if effective_cap is not None and effective_cap > 0 and new_downloads >= effective_cap:
+                log_event("INFO", f"Kênh '{ch_name}': Đã đạt giới hạn tối đa {effective_cap} video cho lần quét này.")
+                break
+
+            vid = v["video_id"]
+            if not self.is_video_already_downloaded(vid):
                 log_event("INFO", f"Phát hiện video mới từ kênh '{ch_name}': {v['title']}")
                 res = yt_downloader.download_video(
                     v["url"],
@@ -490,6 +564,7 @@ class YouTubeRSSMonitor:
             "title": ch_name,
             "total_rss": len(videos),
             "new_videos": new_downloads,
+            "max_limit": effective_cap,
             "items": new_items
         }
 
@@ -503,6 +578,15 @@ class YouTubeRSSMonitor:
 
         total_new_downloaded = 0
         for idx, ch in enumerate(channels):
+            # Kiểm tra nếu Scheduler đã bị người dùng tạm dừng thì dừng ngay lập tức
+            try:
+                from backend.scheduler import scheduler
+                if not scheduler.is_running:
+                    log_event("INFO", "[RSS WORKER] Đã dừng quét các kênh tiếp theo vì Background Scheduler đã tạm dừng.")
+                    break
+            except Exception:
+                pass
+
             if idx > 0 and delay > 0:
                 time.sleep(delay)
 
@@ -516,16 +600,19 @@ class YouTubeRSSMonitor:
             min_dur, max_dur, inc_shorts, inc_longform = self.get_effective_duration_limits(ch_id)
 
             for v in videos:
+                # Kiểm tra nếu Scheduler đã bị người dùng tạm dừng giữa chừng
+                try:
+                    from backend.scheduler import scheduler
+                    if not scheduler.is_running:
+                        log_event("INFO", f"[RSS WORKER] Đã dừng tải/render kênh '{ch_name}' vì Background Scheduler đã tạm dừng.")
+                        return total_new_downloaded
+                except Exception:
+                    pass
+
                 if max_per_channel > 0 and channel_downloaded >= max_per_channel:
                     break
                 vid = v["video_id"]
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM videos WHERE yt_video_id = ?", (vid,))
-                exists = cursor.fetchone()
-                conn.close()
-
-                if not exists:
+                if not self.is_video_already_downloaded(vid):
                     log_event("INFO", f"Phát hiện video mới từ kênh '{ch_name}': {v['title']}")
                     res = yt_downloader.download_video(
                         v["url"],
