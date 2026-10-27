@@ -44,8 +44,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "dist\TikTokFarm\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "logo\*"; DestDir: "{app}\logo"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Copy .env.example if .env does not exist yet
-Source: ".env.example"; DestDir: "{app}"; DestName: ".env.example"; Flags: ignoreversion
+
 
 [Dirs]
 Name: "{app}\data"
