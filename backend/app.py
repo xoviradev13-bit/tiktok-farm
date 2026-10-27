@@ -25,6 +25,8 @@ from backend.modules.notifier import notifier
 from backend.modules.yt_monitor import yt_monitor
 from backend.modules.tiktok_tracker import tiktok_tracker
 from backend.modules.audio_manager import audio_manager, sanitize_audio_filename, ALLOWED_AUDIO_EXTENSIONS
+from backend.modules.account_health import account_health
+from backend.modules.gpm_profile_reader import is_gpm_reader_available, fetch_account_info_from_gpm
 from backend.scheduler import scheduler
 from backend.config import LOG_FILE_PATH
 from backend.logger import (
@@ -180,9 +182,15 @@ class UpdateProfileStatsRequest(BaseModel):
     followers: int
     views: int
     username: Optional[str] = ""
+    nickname: Optional[str] = ""
+    tiktok_uid: Optional[str] = ""
+    sec_uid: Optional[str] = ""
 
 class UpdateProfileUsernameRequest(BaseModel):
     username: str
+    nickname: Optional[str] = ""
+    tiktok_uid: Optional[str] = ""
+    sec_uid: Optional[str] = ""
 
 class UpdateProfileNotifyStatusRequest(BaseModel):
     status: str
@@ -528,7 +536,7 @@ def check_gpm_health():
 
 @app.post("/api/gpm/sync")
 def sync_gpm_profiles():
-    """Đồng bộ toàn bộ danh sách profile từ GPMLogin vào database (thêm mới, cập nhật và xóa profile đã bị xóa trên GPM)"""
+    """Đồng bộ toàn bộ danh sách profile từ GPMLogin vào database và tự động nhận diện TikTok Handle & NickName mới nhất"""
     profiles = gpm_client.get_profiles()
     if not profiles:
         return {"status": "warning", "message": "Không tìm thấy profile nào từ GPMLogin (hoặc GPM chưa mở)", "synced": 0}
@@ -561,11 +569,45 @@ def sync_gpm_profiles():
     conn.commit()
     conn.close()
 
+    # Tự động cập nhật TikTok Handle (Username) & Profile Name (Nickname) từ local cookies (ZeroRAM)
+    tt_synced = 0
+    if is_gpm_reader_available() and active_gpm_ids:
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            def sync_single_cookie(pid):
+                try:
+                    res = fetch_account_info_from_gpm(pid)
+                    if res.get("found") and res.get("is_logged_in"):
+                        metrics_tracker.update_profile_stats(
+                            gpm_id=pid,
+                            followers=res.get("followers", 0),
+                            total_views=res.get("views_7d", 0),
+                            username=res.get("username") or "",
+                            nickname=res.get("nickname") or "",
+                            tiktok_uid=res.get("tiktok_uid") or res.get("user_id") or "",
+                            sec_uid=res.get("sec_uid") or ""
+                        )
+                        account_health.update_health_status(pid, "active", "")
+                        return True
+                    elif res.get("source") == "no_session" or (res.get("found") and not res.get("is_logged_in")):
+                        account_health.update_health_status(pid, "unlogged", res.get("message") or "Phiên TikTok đã hết hạn hoặc đã đăng xuất")
+                except Exception:
+                    pass
+                return False
+
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                results = list(ex.map(sync_single_cookie, list(active_gpm_ids)))
+                tt_synced = sum(1 for r in results if r)
+        except Exception as tt_err:
+            log_event("WARNING", f"Lỗi đồng bộ chi tiết TikTok từ cookie: {tt_err}")
+
     msg = f"Đã đồng bộ {synced} profile từ GPMLogin"
+    if tt_synced > 0:
+        msg += f" (đã cập nhật thông tin TikTok của {tt_synced} profile)"
     if removed_count > 0:
         msg += f" (đã gỡ bỏ {removed_count} profile không còn tồn tại)"
     log_event("INFO", msg)
-    return {"status": "success", "synced": synced, "removed": removed_count, "message": msg}
+    return {"status": "success", "synced": synced, "tiktok_synced": tt_synced, "removed": removed_count, "message": msg}
 
 @app.get("/api/gpm/profiles")
 def list_gpm_profiles():
@@ -2541,7 +2583,10 @@ def update_profile_stats(req: UpdateProfileStatsRequest):
         gpm_id=req.gpm_id,
         followers=req.followers,
         total_views=req.views,
-        username=req.username or ""
+        username=req.username or "",
+        nickname=req.nickname or "",
+        tiktok_uid=req.tiktok_uid or "",
+        sec_uid=req.sec_uid or ""
     )
     return result
 
@@ -2599,13 +2644,23 @@ def update_profile_username(gpm_id: str, req: UpdateProfileUsernameRequest):
     if not req.username or not req.username.strip():
         raise HTTPException(status_code=400, detail="Username TikTok không được để trống!")
     cleaned_u = req.username.strip().replace("@", "")
+    cleaned_nick = (req.nickname or "").strip()
+    cleaned_uid = (req.tiktok_uid or "").strip()
+    cleaned_sec = (req.sec_uid or "").strip()
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE gpm_profiles SET tiktok_username = ? WHERE gpm_id = ?", (cleaned_u, gpm_id))
+    cursor.execute("""
+        UPDATE gpm_profiles 
+        SET tiktok_username = ?,
+            tiktok_nickname = COALESCE(NULLIF(?, ''), tiktok_nickname),
+            tiktok_uid = COALESCE(NULLIF(?, ''), tiktok_uid),
+            sec_uid = COALESCE(NULLIF(?, ''), sec_uid)
+        WHERE gpm_id = ?
+    """, (cleaned_u, cleaned_nick, cleaned_uid, cleaned_sec, gpm_id))
     conn.commit()
     conn.close()
-    log_event("INFO", f"Đã gán TikTok username @{cleaned_u} cho GPM profile {gpm_id}")
-    return {"status": "success", "gpm_id": gpm_id, "username": cleaned_u}
+    log_event("INFO", f"Đã gán TikTok username @{cleaned_u} ({cleaned_nick}) cho GPM profile {gpm_id}")
+    return {"status": "success", "gpm_id": gpm_id, "username": cleaned_u, "nickname": cleaned_nick, "tiktok_uid": cleaned_uid, "sec_uid": cleaned_sec}
 
 @app.put("/api/profiles/{gpm_id}/notify-status")
 @app.post("/api/profiles/{gpm_id}/notify-status")

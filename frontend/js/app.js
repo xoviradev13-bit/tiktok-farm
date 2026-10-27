@@ -2466,10 +2466,12 @@ function exportGpmProfilesCsv() {
         list = list.filter(p => {
             const name = (p.name || '').toLowerCase();
             const u = (p.tiktok_username || '').toLowerCase();
+            const nick = (p.tiktok_nickname || '').toLowerCase();
+            const uid = (p.tiktok_uid || '').toLowerCase();
             const proxy = (p.raw_proxy || '').toLowerCase();
             const gid = (p.gpm_id || '').toLowerCase();
             const nstat = (p.notify_status || 'tracking').toLowerCase();
-            return name.includes(keyword) || u.includes(keyword) || proxy.includes(keyword) || gid.includes(keyword) || nstat.includes(keyword);
+            return name.includes(keyword) || u.includes(keyword) || nick.includes(keyword) || uid.includes(keyword) || proxy.includes(keyword) || gid.includes(keyword) || nstat.includes(keyword);
         });
     }
 
@@ -2607,18 +2609,22 @@ function renderGpmProfilesTable() {
     } else {
         tbody.innerHTML = list.map(p => {
             const hasUsername = Boolean(p.tiktok_username && p.tiktok_username.trim());
+            const hasNickname = Boolean(p.tiktok_nickname && p.tiktok_nickname.trim());
             const usernameDisplay = hasUsername
-                ? `<div style="display:flex; align-items:center; gap:6px; min-width:0;">
-                    <a href="https://www.tiktok.com/@${escapeHtml(p.tiktok_username)}" target="_blank" class="table-text-truncate" style="max-width:150px; color:var(--accent-cyan); font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="@${escapeHtml(p.tiktok_username)}">
-                        <i class="fa-brands fa-tiktok" style="flex-shrink:0;"></i> <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@${escapeHtml(p.tiktok_username)}</span>
-                    </a>
-                    <button type="button" class="btn-inline-edit has-tooltip tooltip-top" onclick="openEditUsernameModal('${escapeHtml(p.gpm_id)}', '${escapeHtml(p.name)}', '${escapeHtml(p.tiktok_username || '')}', ${p.followers_count || 0})" data-tooltip="Sửa Nick TikTok & Chỉ Số">
-                        <i class="fa-solid fa-pen"></i>
-                    </button>
+                ? `<div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+                        <a href="https://www.tiktok.com/@${escapeHtml(p.tiktok_username)}" target="_blank" class="table-text-truncate" style="max-width:150px; color:var(--accent-cyan); font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="@${escapeHtml(p.tiktok_username)}${p.tiktok_uid ? ' (UID: ' + escapeHtml(p.tiktok_uid) + ')' : ''}">
+                            <i class="fa-brands fa-tiktok" style="flex-shrink:0;"></i> <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@${escapeHtml(p.tiktok_username)}</span>
+                        </a>
+                        <button type="button" class="btn-inline-edit has-tooltip tooltip-top" onclick="openEditUsernameModal('${escapeHtml(p.gpm_id)}', '${escapeHtml(p.name)}', '${escapeHtml(p.tiktok_username || '')}', ${p.followers_count || 0}, '${escapeHtml(p.tiktok_nickname || '')}')" data-tooltip="Sửa Nick TikTok & Chỉ Số">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                    </div>
+                    ${hasNickname ? `<div class="table-text-truncate text-muted" style="max-width:165px; font-size:11.5px; font-weight:500;" title="${escapeHtml(p.tiktok_nickname)}"><i class="fa-solid fa-id-badge" style="font-size:10px; opacity:0.7;"></i> ${escapeHtml(p.tiktok_nickname)}</div>` : ''}
                    </div>`
                 : `<div style="display:flex; align-items:center; gap:6px;">
                     <span class="text-muted" style="font-size:12px;"><i class="fa-brands fa-tiktok"></i> Chưa gắn</span>
-                    <button type="button" class="btn-inline-edit has-tooltip tooltip-top" onclick="openEditUsernameModal('${escapeHtml(p.gpm_id)}', '${escapeHtml(p.name)}', '', ${p.followers_count || 0})" data-tooltip="Gán Nick TikTok Cho Profile" style="width:auto; padding:0 8px; font-size:10.5px; gap:4px;">
+                    <button type="button" class="btn-inline-edit has-tooltip tooltip-top" onclick="openEditUsernameModal('${escapeHtml(p.gpm_id)}', '${escapeHtml(p.name)}', '', ${p.followers_count || 0}, '${escapeHtml(p.tiktok_nickname || '')}')" data-tooltip="Gán Nick TikTok Cho Profile" style="width:auto; padding:0 8px; font-size:10.5px; gap:4px;">
                         <i class="fa-solid fa-plus"></i> Gán
                     </button>
                    </div>`;
@@ -2691,7 +2697,7 @@ function renderGpmProfilesTable() {
                             <button type="button" class="action-dropdown-item" onclick="scanSingleProfileFollowers('${escapeHtml(p.gpm_id)}', this); closeAllActionMenus();">
                                 <i class="fa-solid fa-magnifying-glass-chart" style="color:var(--accent-pink);"></i> Quét Follower ngay
                             </button>
-                            <button type="button" class="action-dropdown-item" onclick="openEditUsernameModal('${escapeHtml(p.gpm_id)}', '${escapeHtml(p.name)}', '${escapeHtml(p.tiktok_username || '')}', ${followersCount}); closeAllActionMenus();">
+                            <button type="button" class="action-dropdown-item" onclick="openEditUsernameModal('${escapeHtml(p.gpm_id)}', '${escapeHtml(p.name)}', '${escapeHtml(p.tiktok_username || '')}', ${followersCount}, '${escapeHtml(p.tiktok_nickname || '')}'); closeAllActionMenus();">
                                 <i class="fa-solid fa-pen-to-square" style="color:var(--accent-cyan);"></i> Sửa Nick & Chỉ số
                             </button>
                             ${nStatus === 'tracking' ? `
@@ -2990,10 +2996,12 @@ async function scanAllProfilesFollowers(btn) {
 }
 
 // Quản lý Modal sửa Nick & Followers
-function openEditUsernameModal(gpmId, profileName, currentUsername, followers) {
+function openEditUsernameModal(gpmId, profileName, currentUsername, followers, currentNickname) {
     document.getElementById('editProfileGpmId').value = gpmId;
     document.getElementById('editProfileName').value = profileName || gpmId;
     document.getElementById('editProfileUsername').value = (currentUsername || '').replace(/^@/, '');
+    const nickInput = document.getElementById('editProfileNickname');
+    if (nickInput) nickInput.value = currentNickname || '';
     document.getElementById('editProfileFollowers').value = followers || 0;
     const modal = document.getElementById('editProfileUsernameModal');
     if (modal) modal.classList.add('active');
@@ -3007,8 +3015,10 @@ function closeEditUsernameModal() {
 async function saveProfileUsernameFromModal(btn) {
     const gpmId = document.getElementById('editProfileGpmId').value;
     const usernameInput = document.getElementById('editProfileUsername');
+    const nicknameInput = document.getElementById('editProfileNickname');
     const followersInput = document.getElementById('editProfileFollowers');
     const username = usernameInput ? usernameInput.value.trim().replace(/^@/, '') : '';
+    const nickname = nicknameInput ? nicknameInput.value.trim() : '';
     const rawFollowers = followersInput ? followersInput.value.trim() : '0';
     const followers = parseInt(rawFollowers, 10);
 
@@ -3031,7 +3041,7 @@ async function saveProfileUsernameFromModal(btn) {
         const resU = await fetch(`/api/profiles/${gpmId}/username`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username })
+            body: JSON.stringify({ username: username, nickname: nickname })
         });
         const dataU = await resU.json();
         if (!resU.ok) {
@@ -3046,7 +3056,8 @@ async function saveProfileUsernameFromModal(btn) {
                 gpm_id: gpmId,
                 followers: followers,
                 views: 0,
-                username: username
+                username: username,
+                nickname: nickname
             })
         });
         const dataS = await resS.json();
@@ -3055,7 +3066,7 @@ async function saveProfileUsernameFromModal(btn) {
             return;
         }
 
-        showToast(`✅ Đã lưu thông tin @${username} thành công!`, 'success');
+        showToast(`✅ Đã lưu thông tin @${username} (${nickname || 'Không có tên'}) thành công!`, 'success');
         closeEditUsernameModal();
         loadGpmProfiles();
         loadDashboardStats();
@@ -3075,6 +3086,10 @@ async function scanCurrentEditProfile(btn) {
     const res = await scanSingleProfileFollowers(gpmId, btn);
     if (res && res.success) {
         if (res.username) document.getElementById('editProfileUsername').value = res.username;
+        if (res.nickname !== undefined) {
+            const nickInput = document.getElementById('editProfileNickname');
+            if (nickInput) nickInput.value = res.nickname || '';
+        }
         if (res.followers !== undefined) document.getElementById('editProfileFollowers').value = res.followers;
     }
 }
@@ -4748,8 +4763,8 @@ async function loadCampaigns() {
                     <i class="fa-solid fa-robot"></i>
                     <h4>Chưa có chiến dịch tự động nào</h4>
                     <p>Hãy tạo chiến dịch đầu tiên để kết nối Kênh YouTube nguồn với công thức Edit và Nick TikTok nhận video.</p>
-                    <button class="btn btn-primary mt-3" onclick="openNewCampaignModal()">
-                        <i class="fa-solid fa-plus"></i> Tạo Chiến Dịch Tự Động Đầu Tiên
+                    <button class="btn btn-primary mt-3" onclick="openNewCampaignModal()" style="display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                        <i class="fa-solid fa-plus"></i> <span>Tạo Chiến Dịch Tự Động Đầu Tiên</span>
                     </button>
                 </div>
             `;

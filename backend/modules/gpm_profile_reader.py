@@ -277,45 +277,65 @@ def fetch_account_info_from_gpm(profile_id: str, storage_path_hint: Optional[str
     username: Optional[str] = None
     nickname: Optional[str] = None
     user_id: Optional[str] = None
+    sec_uid: Optional[str] = None
     followers: int = 0
     views_7d: int = 0
     is_logged_in: bool = False
 
-    # ─── BƯỚC 1: TikTok Passport Session API (<1s, xác định user đăng nhập) ──
+    # ─── BƯỚC 1: TikTok Studio User API (Ưu tiên số 1 - Chứa UniqId & NickName thời gian thực) ───
+    try:
+        studio_qs = (
+            "aid=1988&app_name=tiktok_creator_center"
+            "&device_platform=web_pc&channel=tiktok_web"
+            "&os=win&browser_name=Mozilla&browser_platform=Win32"
+        )
+        r_st = sess.get(f"https://www.tiktok.com/tiktokstudio/api/web/user?{studio_qs}", timeout=8)
+        if r_st.status_code == 200:
+            ub = (r_st.json().get("userBaseInfo") or {}).get("UserProfile", {}).get("UserBase", {})
+            raw_uid = ub.get("Id") or ub.get("Uid") or ub.get("uid") or ub.get("user_id") if ub else None
+            if ub and raw_uid:
+                is_logged_in = True
+                user_id = str(raw_uid).strip()
+                raw_sec = ub.get("SecUid") or ub.get("sec_uid") or ub.get("secUid")
+                if raw_sec:
+                    sec_uid = str(raw_sec).strip()
+                if ub.get("UniqId"):
+                    username = str(ub["UniqId"]).lstrip("@").strip()
+                if ub.get("NickName"):
+                    nickname = str(ub["NickName"]).strip()
+                fc = ub.get("FanCount") or ub.get("FanCnt")
+                if fc is not None:
+                    try:
+                        followers = int(fc)
+                    except Exception:
+                        pass
+                log_event("DEBUG", f"[GPMProfileReader] {profile_id} Studio User -> @{username} ({nickname}, uid={user_id})")
+    except Exception as e:
+        log_event("DEBUG", f"[GPMProfileReader] {profile_id} Studio user API error: {e}")
+
+    # ─── BƯỚC 2: TikTok Passport Session API (Xác minh session & Fallback nếu Studio API thiếu) ──
     try:
         r_pass = sess.get("https://www.tiktok.com/passport/web/account/info/?app_id=1233", timeout=8)
         if r_pass.status_code == 200:
             pdata = r_pass.json().get("data", {})
             if pdata.get("user_id"):
                 is_logged_in = True
-                user_id = str(pdata["user_id"])
-                username = pdata.get("username") or pdata.get("screen_name")
-                nickname = pdata.get("screen_name") or username
-                log_event("DEBUG", f"[GPMProfileReader] {profile_id} Passport -> @{username} ({nickname})")
+                if not user_id:
+                    user_id = str(pdata["user_id"]).strip()
+                if not sec_uid and pdata.get("sec_user_id"):
+                    sec_uid = str(pdata["sec_user_id"]).strip()
+                # Chỉ lấy username / nickname từ Passport nếu Studio chưa trả về
+                if not username:
+                    p_u = pdata.get("username") or pdata.get("screen_name")
+                    if p_u:
+                        username = str(p_u).lstrip("@").strip()
+                if not nickname:
+                    p_n = pdata.get("screen_name") or username
+                    if p_n:
+                        nickname = str(p_n).strip()
+                log_event("DEBUG", f"[GPMProfileReader] {profile_id} Passport -> @{pdata.get('username')} ({pdata.get('screen_name')})")
     except Exception as e:
         log_event("DEBUG", f"[GPMProfileReader] {profile_id} Passport API error: {e}")
-
-    # ─── BƯỚC 2: TikTok Studio User API (Fallback nếu Passport thiếu user) ───
-    if not username:
-        try:
-            studio_qs = (
-                "aid=1988&app_name=tiktok_creator_center"
-                "&device_platform=web_pc&channel=tiktok_web"
-                "&os=win&browser_name=Mozilla&browser_platform=Win32"
-            )
-            r_st = sess.get(f"https://www.tiktok.com/tiktokstudio/api/web/user?{studio_qs}", timeout=8)
-            if r_st.status_code == 200:
-                ub = (r_st.json().get("userBaseInfo") or {}).get("UserProfile", {}).get("UserBase", {})
-                if ub and ub.get("Id"):
-                    is_logged_in = True
-                    if not user_id:
-                        user_id = str(ub["Id"])
-                    if not username and ub.get("UniqId"):
-                        username = ub["UniqId"]
-                    if not nickname and ub.get("NickName"):
-                        nickname = ub["NickName"]
-        except Exception as e:
-            log_event("DEBUG", f"[GPMProfileReader] {profile_id} Studio user API error: {e}")
 
     # ─── BƯỚC 3: Aweme Insight API (Lấy chính xác Follower Count & 7d Views) ─
     # Endpoint này trả về JSON trực tiếp mà không bị TikTok WAF 403 như trang cá nhân HTML
@@ -381,19 +401,23 @@ def fetch_account_info_from_gpm(profile_id: str, storage_path_hint: Optional[str
             "username": None,
             "nickname": None,
             "user_id": None,
+            "tiktok_uid": None,
+            "sec_uid": None,
             "followers": 0,
             "views_7d": 0,
             "source": "api_error",
             "message": f"Cookie profile {profile_id} đã hết hạn hoặc bị TikTok từ chối."
         }
 
-    log_event("INFO", f"✅ [GPMZeroRAM] {profile_id}: @{username} ({nickname}) - {followers:,} followers (0 browser)")
+    log_event("INFO", f"✅ [GPMZeroRAM] {profile_id}: @{username} ({nickname}, uid={user_id}) - {followers:,} followers (0 browser)")
     return {
         "found": True,
         "is_logged_in": True,
         "username": username.lstrip("@").strip(),
         "nickname": nickname,
         "user_id": user_id,
+        "tiktok_uid": user_id,
+        "sec_uid": sec_uid,
         "followers": followers,
         "views_7d": views_7d,
         "source": "gpm_profile",

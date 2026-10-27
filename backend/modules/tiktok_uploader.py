@@ -204,6 +204,24 @@ class TikTokUploader:
                 # Dọn sạch các modal nếu có sẵn khi vào trang
                 dismiss_tiktok_modals(page)
 
+                # Tự động đồng bộ lại TikTok handle và nickname nếu có thay đổi trên tài khoản
+                try:
+                    from backend.modules.tiktok_tracker import tiktok_tracker
+                    from backend.modules.metrics_tracker import metrics_tracker
+                    acc_metrics = tiktok_tracker.extract_metrics_from_page(page)
+                    if acc_metrics.get("is_logged_in") and acc_metrics.get("username"):
+                        metrics_tracker.update_profile_stats(
+                            gpm_id=gpm_profile_id,
+                            followers=acc_metrics.get("followers", 0),
+                            total_views=0,
+                            username=acc_metrics.get("username"),
+                            nickname=acc_metrics.get("nickname") or "",
+                            tiktok_uid=acc_metrics.get("tiktok_uid") or acc_metrics.get("user_id") or "",
+                            sec_uid=acc_metrics.get("sec_uid") or ""
+                        )
+                except Exception:
+                    pass
+
                 # 3. Kiểm tra xem video đã được đưa vào chưa, nếu chưa thì tìm input[type="file"]
                 has_uploaded_video = page.locator('button:has-text("Thay thế"), button:has-text("Replace")').count() > 0
 

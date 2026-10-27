@@ -98,6 +98,9 @@ def init_db():
         name TEXT,
         raw_proxy TEXT,
         tiktok_username TEXT,
+        tiktok_nickname TEXT DEFAULT '',
+        tiktok_uid TEXT DEFAULT '',
+        sec_uid TEXT DEFAULT '',
         followers_count INTEGER DEFAULT 0,
         total_views INTEGER DEFAULT 0,
         eligible_10k INTEGER DEFAULT 0,
@@ -112,6 +115,12 @@ def init_db():
     # Migration columns cho gpm_profiles nếu chưa có
     cursor.execute("PRAGMA table_info(gpm_profiles)")
     existing_gpm_cols = {row["name"] for row in cursor.fetchall()}
+    for col in ["tiktok_nickname", "tiktok_uid", "sec_uid"]:
+        if col not in existing_gpm_cols:
+            try:
+                cursor.execute(f"ALTER TABLE gpm_profiles ADD COLUMN {col} TEXT DEFAULT ''")
+            except Exception:
+                pass
     if "status_reason" not in existing_gpm_cols:
         try:
             cursor.execute("ALTER TABLE gpm_profiles ADD COLUMN status_reason TEXT DEFAULT ''")

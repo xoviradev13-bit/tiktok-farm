@@ -654,6 +654,7 @@ tr.row-saved td:first-child::after {
 .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 10px 18px;
     border-radius: 10px;
@@ -662,6 +663,13 @@ tr.row-saved td:first-child::after {
     cursor: pointer;
     border: none;
     transition: all 0.25s ease;
+}
+
+.btn i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
 }
 
 .btn-primary {
@@ -3293,11 +3301,29 @@ tr.row-dropdown-open .action-dropdown-wrap {
     border-radius: var(--radius-md);
 }
 
-.card-empty-state i {
+.card-empty-state > i {
     font-size: 28px;
     color: var(--accent-gold);
     opacity: 0.85;
     margin-bottom: 12px;
+}
+
+.card-empty-state .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.card-empty-state .btn i {
+    font-size: 13px;
+    color: inherit;
+    opacity: 1;
+    margin: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .card-empty-state p {
@@ -4826,7 +4852,27 @@ body.sidebar-collapsed .nav-section-title {
     flex-direction: column;
     gap: 10px;
     overflow-y: auto;
+    overflow-x: hidden;
     max-height: 600px;
+    padding: 6px 4px 8px 4px;
+    margin: -4px -4px 0 -4px;
+}
+
+.kanban-col-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+.kanban-col-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.kanban-col-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+}
+
+.kanban-col-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 242, 254, 0.35);
 }
 
 .kanban-task-card {
@@ -4838,12 +4884,15 @@ body.sidebar-collapsed .nav-section-title {
     flex-direction: column;
     gap: 8px;
     transition: all 0.2s ease;
+    position: relative;
 }
 
 .kanban-task-card:hover {
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(0, 242, 254, 0.25);
     transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    z-index: 2;
 }
 
 /* Campaign Multi-select & Folder Badges */

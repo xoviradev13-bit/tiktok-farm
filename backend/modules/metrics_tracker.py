@@ -10,14 +10,17 @@ class MetricsTracker:
         followers: int,
         total_views: int,
         username: str = "",
+        nickname: str = "",
+        tiktok_uid: str = "",
+        sec_uid: str = "",
         min_followers_threshold: int = 10000,
         min_views_threshold: int = 100000,
         require_views: bool = False
     ) -> Dict[str, Any]:
         """
-        Cập nhật số follower & view cho profile. 
-        Nếu đạt >= ngưỡng cấu hình (Mặc định 10.000 Follower & tùy chọn 100.000 views)
-        -> Tự động kích hoạt thông báo Telegram
+        Cập nhật số follower, view, username, nickname, tiktok_uid & sec_uid cho profile. 
+        Nếu phát hiện cùng tiktok_uid đăng nhập trên profile khác -> Tự động chuyển giao (migrate)
+        và cập nhật chính xác tài khoản.
         """
         conn = get_connection()
         cursor = conn.cursor()
@@ -30,16 +33,37 @@ class MetricsTracker:
         profile_name = row["name"] if row else gpm_id
         current_notify_status = (row["notify_status"] if row and row["notify_status"] else "tracking").lower()
         
+        # Làm sạch username, nickname, tiktok_uid & sec_uid
+        clean_user = (username or "").strip().lstrip("@")
+        clean_nick = (nickname or "").strip()
+        clean_uid = (tiktok_uid or "").strip()
+        clean_sec = (sec_uid or "").strip()
+
+        # NẾU CÓ TIKTOK_UID HOẶC SEC_UID: Kiểm tra xem tài khoản này trước đó có gắn với profile GPM nào khác không
+        other_profiles = []
+        if clean_uid:
+            cursor.execute("SELECT gpm_id, name FROM gpm_profiles WHERE tiktok_uid = ? AND gpm_id != ?", (clean_uid, gpm_id))
+            other_profiles = cursor.fetchall()
+        elif clean_sec:
+            cursor.execute("SELECT gpm_id, name FROM gpm_profiles WHERE sec_uid = ? AND gpm_id != ?", (clean_sec, gpm_id))
+            other_profiles = cursor.fetchall()
+
+        for other in other_profiles:
+            cursor.execute("""
+                UPDATE gpm_profiles 
+                SET tiktok_username = '', tiktok_nickname = '', tiktok_uid = '', sec_uid = '',
+                    status = 'unlogged', status_reason = 'Tài khoản TikTok đã chuyển sang profile ' || ?
+                WHERE gpm_id = ?
+            """, (profile_name, other["gpm_id"]))
+            log_event("INFO", f"🔄 [MIGRATE ACCOUNT] TikTok {clean_uid or clean_sec} (@{clean_user}) đã chuyển từ profile '{other['name']}' sang '{profile_name}'")
+
         # Kiểm tra điều kiện Creator Rewards (Follower + Views)
         meets_followers = followers >= min_followers_threshold
         meets_views = (total_views >= min_views_threshold) if require_views else True
         new_eligible = 1 if (meets_followers and meets_views) else 0
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Xác định trạng thái thông báo Telegram:
-        # - 'tracking' (Đang theo dõi): Khi đạt ngưỡng 10k -> Bắn thông báo Telegram & chuyển sang 'sent'
-        # - 'sent' (Đã gửi): Đã gửi rồi, không gửi lại nữa (trừ khi người dùng chủ động đổi về 'tracking')
-        # - 'muted' (Bỏ theo dõi): Không gửi thông báo dù vượt ngưỡng 10k
+        # Xác định trạng thái thông báo Telegram
         new_notify_status = current_notify_status
         should_send_alert = False
 
@@ -52,22 +76,29 @@ class MetricsTracker:
             followers_count = ?,
             total_views = ?,
             tiktok_username = COALESCE(NULLIF(?, ''), tiktok_username),
+            tiktok_nickname = COALESCE(NULLIF(?, ''), tiktok_nickname),
+            tiktok_uid = COALESCE(NULLIF(?, ''), tiktok_uid),
+            sec_uid = COALESCE(NULLIF(?, ''), sec_uid),
             eligible_10k = ?,
             notify_status = ?,
             last_checked = ?
         WHERE gpm_id = ?
-        ''', (followers, total_views, username, new_eligible, new_notify_status, now_str, gpm_id))
+        ''', (followers, total_views, clean_user, clean_nick, clean_uid, clean_sec, new_eligible, new_notify_status, now_str, gpm_id))
         conn.commit()
         conn.close()
 
         # Bắn thông báo Telegram khi đạt điều kiện theo dõi
         if should_send_alert:
             log_event("INFO", f"🎉 Tài khoản {profile_name} đã cán mốc {followers:,} followers! Gửi cảnh báo Telegram...")
-            notifier.send_10k_alert(profile_name, username, followers, total_views)
+            notifier.send_10k_alert(profile_name, clean_user, followers, total_views)
 
         return {
             "gpm_id": gpm_id,
             "followers": followers,
+            "username": clean_user,
+            "nickname": clean_nick,
+            "tiktok_uid": clean_uid,
+            "sec_uid": clean_sec,
             "eligible_10k": bool(new_eligible),
             "notify_status": new_notify_status
         }

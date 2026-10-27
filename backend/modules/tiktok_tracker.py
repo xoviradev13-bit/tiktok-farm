@@ -85,27 +85,11 @@ class TikTokTracker:
                     let authUsername = null;
                     let authNickname = null;
                     let authUserId = null;
+                    let authSecUid = null;
                     let isLoggedIn = false;
                     let followersRaw = null;
 
-                    // 1. KIỂM TRA GROUND-TRUTH TÀI KHOẢN ĐĂNG NHẬP QUA PASSPORT SESSION API
-                    try {
-                        const passRes = await fetch("https://www.tiktok.com/passport/web/account/info/?app_id=1233", {
-                            credentials: "include",
-                            headers: { "Accept": "application/json" }
-                        });
-                        if (passRes.ok) {
-                            const pData = await passRes.json();
-                            if (pData?.message === "success" && pData?.data?.user_id) {
-                                authUserId = String(pData.data.user_id);
-                                authUsername = pData.data.username || pData.data.screen_name || null;
-                                authNickname = pData.data.screen_name || null;
-                                isLoggedIn = true;
-                            }
-                        }
-                    } catch(e) {}
-
-                    // 2. KIỂM TRA QUA TIKTOK STUDIO USER SESSION API (NẾU CHƯA CÓ HOẶC BỔ SUNG)
+                    // 1. KIỂM TRA QUA TIKTOK STUDIO USER SESSION API (ƯU TIÊN SỐ 1 - CHỨA UNIQID & NICKNAME MỚI NHẤT)
                     try {
                         const studioQs = "aid=1988&app_name=tiktok_creator_center&device_platform=web_pc&channel=tiktok_web&os=win&browser_name=Mozilla&browser_platform=Win32";
                         const sRes = await fetch(`https://www.tiktok.com/tiktokstudio/api/web/user?${studioQs}`, {
@@ -117,25 +101,45 @@ class TikTokTracker:
                             const ub = sData?.userBaseInfo?.UserProfile?.UserBase;
                             if (ub && ub.Id) {
                                 isLoggedIn = true;
-                                if (!authUserId) authUserId = String(ub.Id);
-                                if (!authUsername && ub.UniqId) authUsername = ub.UniqId;
-                                if (!authNickname && ub.NickName) authNickname = ub.NickName;
+                                authUserId = String(ub.Id);
+                                if (ub.SecUid) authSecUid = String(ub.SecUid).trim();
+                                if (ub.UniqId) authUsername = ub.UniqId;
+                                if (ub.NickName) authNickname = ub.NickName;
                                 const fc = ub.FanCount ?? ub.FanCnt;
                                 if (fc !== undefined && fc !== null) followersRaw = fc;
                             }
                         }
                     } catch(e) {}
 
-                    // 3. KIỂM TRA QUA SSR HYDRATION: webapp.app-context.user (AUTHENTICATED VIEWER)
-                    if (!isLoggedIn) {
+                    // 2. KIỂM TRA QUA SSR HYDRATION: webapp.app-context.user (AUTHENTICATED VIEWER)
+                    try {
+                        const scope = window.__UNIVERSAL_DATA_FOR_REHYDRATION__?.["__DEFAULT_SCOPE__"] || {};
+                        const appUser = scope["webapp.app-context"]?.user;
+                        if (appUser && (appUser.uniqueId || appUser.id)) {
+                            isLoggedIn = true;
+                            if (!authUserId && appUser.id) authUserId = String(appUser.id);
+                            if (!authSecUid && appUser.secUid) authSecUid = String(appUser.secUid).trim();
+                            if (!authUsername && appUser.uniqueId) authUsername = appUser.uniqueId;
+                            if (!authNickname && appUser.nickname) authNickname = appUser.nickname;
+                        }
+                    } catch(e) {}
+
+                    // 3. FALLBACK: KIỂM TRA QUA PASSPORT SESSION API (NẾU CHƯA CÓ HOẶC BỔ SUNG)
+                    if (!authUsername || !authUserId) {
                         try {
-                            const scope = window.__UNIVERSAL_DATA_FOR_REHYDRATION__?.["__DEFAULT_SCOPE__"] || {};
-                            const appUser = scope["webapp.app-context"]?.user;
-                            if (appUser && (appUser.uniqueId || appUser.id)) {
-                                isLoggedIn = true;
-                                if (!authUserId) authUserId = String(appUser.id);
-                                if (!authUsername) authUsername = appUser.uniqueId;
-                                if (!authNickname) authNickname = appUser.nickname;
+                            const passRes = await fetch("https://www.tiktok.com/passport/web/account/info/?app_id=1233", {
+                                credentials: "include",
+                                headers: { "Accept": "application/json" }
+                            });
+                            if (passRes.ok) {
+                                const pData = await passRes.json();
+                                if (pData?.message === "success" && pData?.data?.user_id) {
+                                    isLoggedIn = true;
+                                    if (!authUserId) authUserId = String(pData.data.user_id);
+                                    if (!authSecUid && pData.data.sec_user_id) authSecUid = String(pData.data.sec_user_id).trim();
+                                    if (!authUsername) authUsername = pData.data.username || pData.data.screen_name || null;
+                                    if (!authNickname) authNickname = pData.data.screen_name || null;
+                                }
                             }
                         } catch(e) {}
                     }
@@ -198,6 +202,7 @@ class TikTokTracker:
                         username: authUsername,
                         nickname: authNickname,
                         userId: authUserId,
+                        secUid: authSecUid,
                         followersRaw: followersRaw
                     };
                 }
@@ -214,12 +219,14 @@ class TikTokTracker:
                 "username": username if is_logged_in else None,
                 "nickname": raw.get("nickname") if is_logged_in else None,
                 "user_id": raw.get("userId") if is_logged_in else None,
+                "tiktok_uid": raw.get("userId") if is_logged_in else None,
+                "sec_uid": raw.get("secUid") if is_logged_in else None,
                 "followers": followers if is_logged_in else 0,
                 "found": bool(is_logged_in and username)
             }
         except Exception as e:
             log_event("WARNING", f"Lỗi trích xuất thông số TikTok từ trang: {e}")
-            return {"is_logged_in": False, "username": None, "nickname": None, "followers": 0, "found": False}
+            return {"is_logged_in": False, "username": None, "nickname": None, "user_id": None, "tiktok_uid": None, "sec_uid": None, "followers": 0, "found": False}
 
     def scan_single_gpm_profile(self, gpm_id: str, auto_close: bool = True, force_browser: bool = False) -> Dict[str, Any]:
         """
@@ -256,21 +263,29 @@ class TikTokTracker:
                 if session_result.get("found") and session_result.get("is_logged_in"):
                     # Profile hợp lệ → cập nhật DB và trả về
                     u_name = session_result["username"]
+                    n_name = session_result.get("nickname") or ""
+                    t_uid = session_result.get("tiktok_uid") or session_result.get("user_id") or ""
+                    s_uid = session_result.get("sec_uid") or ""
                     f_count = session_result.get("followers", 0)
                     v_7d = session_result.get("views_7d", 0)
                     update_res = metrics_tracker.update_profile_stats(
                         gpm_id=gpm_id,
                         followers=f_count,
                         total_views=v_7d,
-                        username=u_name
+                        username=u_name,
+                        nickname=n_name,
+                        tiktok_uid=t_uid,
+                        sec_uid=s_uid
                     )
-                    log_event("INFO", f"✅ [ZeroRAM] {gpm_id}: @{u_name} - {f_count:,} followers ({v_7d:,} views 7d, KHÔNG MỞ BROWSER)")
+                    log_event("INFO", f"✅ [ZeroRAM] {gpm_id}: @{u_name} ({n_name}, uid={t_uid}) - {f_count:,} followers ({v_7d:,} views 7d, KHÔNG MỞ BROWSER)")
                     return {
                         "success": True,
                         "is_logged_in": True,
                         "gpm_id": gpm_id,
                         "username": u_name,
-                        "nickname": session_result.get("nickname"),
+                        "nickname": n_name,
+                        "tiktok_uid": t_uid,
+                        "sec_uid": s_uid,
                         "followers": f_count,
                         "views_7d": v_7d,
                         "eligible_10k": update_res.get("eligible_10k", False),
@@ -369,20 +384,29 @@ class TikTokTracker:
 
             if result.get("is_logged_in") and result.get("username"):
                 u_name = result.get("username")
+                n_name = result.get("nickname") or ""
+                t_uid = result.get("tiktok_uid") or result.get("user_id") or ""
+                s_uid = result.get("sec_uid") or ""
                 f_count = result.get("followers", 0)
                 update_res = metrics_tracker.update_profile_stats(
                     gpm_id=gpm_id,
                     followers=f_count,
                     total_views=0,
-                    username=u_name
+                    username=u_name,
+                    nickname=n_name,
+                    tiktok_uid=t_uid,
+                    sec_uid=s_uid
                 )
                 account_health.update_health_status(gpm_id, "active", "")
-                log_event("INFO", f"✅ [Browser] Đã quét GPM profile {gpm_id}: @{u_name} - {f_count:,} followers (Đủ 10K: {update_res.get('eligible_10k')})")
+                log_event("INFO", f"✅ [Browser] Đã quét GPM profile {gpm_id}: @{u_name} ({n_name}, uid={t_uid}) - {f_count:,} followers (Đủ 10K: {update_res.get('eligible_10k')})")
                 return {
                     "success": True,
                     "is_logged_in": True,
                     "gpm_id": gpm_id,
                     "username": u_name,
+                    "nickname": n_name,
+                    "tiktok_uid": t_uid,
+                    "sec_uid": s_uid,
                     "followers": f_count,
                     "eligible_10k": update_res.get("eligible_10k", False),
                     "scan_method": "browser_cdp",
